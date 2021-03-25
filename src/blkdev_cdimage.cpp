@@ -35,7 +35,7 @@
 #define FLAC__NO_DLL
 #include "FLAC/stream_decoder.h"
 
-#ifdef WITH_CHD
+#ifdef WITH_LIBCHDR
 #include "archivers/chd/chdtypes.h"
 #include "archivers/chd/chd.h"
 #include "archivers/chd/chdcd.h"
@@ -70,7 +70,7 @@ struct cdtoc
 	audenc enctype;
 	int writeoffset;
 	int subcode;
-#ifdef WITH_CHD
+#ifdef WITH_LIBCHDR
 	const cdrom_track_info *chdtrack;
 #endif
 };
@@ -100,7 +100,7 @@ struct cdunit {
 	TCHAR imgname_out[MAX_DPATH];
 	uae_sem_t sub_sem;
 	struct device_info di;
-#ifdef WITH_CHD
+#ifdef WITH_LIBCHDR
 	chd_file *chd_f;
 	cdrom_file *chd_cdf;
 #endif
@@ -154,7 +154,7 @@ static struct cdtoc *findtoc (struct cdunit *cdu, int *sectorp, bool data)
 static int do_read (struct cdunit *cdu, struct cdtoc *t, uae_u8 *data, int sector, int offset, int size, bool audio)
 {
 	if (t->enctype == ENC_CHD) {
-#ifdef WITH_CHD
+#ifdef WITH_LIBCHDR
 		int type = CD_TRACK_MODE1_RAW;
 		uae_u8 tmpbuf[2352];
 		if (size > 2352)
@@ -313,7 +313,7 @@ static int getsub_deinterleaved (uae_u8 *dst, struct cdunit *cdu, struct cdtoc *
 	uae_sem_wait (&cdu->sub_sem);
 	if (t->subcode) {
 		if (t->enctype == ENC_CHD) {
-#ifdef WITH_CHD
+#ifdef WITH_LIBCHDR
 			const cdrom_track_info *cti = t->chdtrack;
 			if (cdrom_read_subcode(cdu->chd_cdf, sector, dst, false))
 				ret = t->subcode;
@@ -633,7 +633,7 @@ static bool cdda_play_func2 (struct cdunit *cdu, int *outpos)
 					}
 					if (!(t->ctrl & 4)) {
 						if (t->enctype == ENC_CHD) {
-#ifdef WITH_CHD
+#ifdef WITH_LIBCHDR
 							do_read (cdu, t, dst, sector, 0, t->size, true);
 							for (int i = 0; i < 2352; i+=2) {
 								uae_u8 p;
@@ -1400,7 +1400,7 @@ end:
 	return cdu->tracks;
 }
 
-#ifdef WITH_CHD
+#ifdef WITH_LIBCHDR
 static int parsechd (struct cdunit *cdu, struct zfile *zcue, const TCHAR *img, const TCHAR *curdir, const TCHAR *ocurdir)
 {
 	if (curdir)
@@ -2114,7 +2114,7 @@ static int parse_image (struct cdunit *cdu, const TCHAR *img)
 			parsemds(cdu, zcue, img, pcurdir, oldcurdir);
 		} else if (!_tcsicmp(ext, _T("nrg"))) {
 			parsenrg(cdu, zcue, img, pcurdir, oldcurdir);
-#ifdef WITH_CHD
+#ifdef WITH_LIBCHDR
 		} else if (!_tcsicmp(ext, _T("chd"))) {
 			parsechd (cdu, zcue, img, pcurdir, oldcurdir);
 #endif
@@ -2250,7 +2250,7 @@ static void unload_image (struct cdunit *cdu)
 		xfree (t->subdata);
 		xfree (t->extrainfo);
 	}
-#ifdef WITH_CHD
+#ifdef WITH_LIBCHDR
 	cdrom_close (cdu->chd_cdf);
 	cdu->chd_cdf = NULL;
 	if (cdu->chd_f)
