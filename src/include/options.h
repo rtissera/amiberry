@@ -10,13 +10,16 @@
 #ifndef UAE_OPTIONS_H
 #define UAE_OPTIONS_H
 
+#include <array>
 #include "uae/types.h"
 
 #include "traps.h"
 
 #define UAEMAJOR 4
-#define UAEMINOR 4
-#define UAESUBREV 0
+#define UAEMINOR 1
+#define UAESUBREV 2
+
+#define MAX_AMIGADISPLAYS 4
 
 typedef enum { KBD_LANG_US, KBD_LANG_DK, KBD_LANG_DE, KBD_LANG_SE, KBD_LANG_FR, KBD_LANG_IT, KBD_LANG_ES } KbdLang;
 
@@ -76,34 +79,6 @@ struct uae_input_device
 	uae_s8 enabled;
 };
 
-#ifdef AMIBERRY
-struct joypad_map_layout
-{
-	int south_action = 0;
-	int east_action = 0;
-	int west_action = 0;
-	int north_action = 0;
-	int left_shoulder_action = 0;
-	int right_shoulder_action = 0;
-	int start_action = 0;
-	int select_action = 0;
-	int dpad_left_action = 0;
-	int dpad_right_action = 0;
-	int dpad_up_action = 0;
-	int dpad_down_action = 0;
-	int lstick_select_action = 0;
-	int lstick_left_action = 0;
-	int lstick_right_action = 0;
-	int lstick_up_action = 0;
-	int lstick_down_action = 0;
-	int rstick_select_action = 0;
-	int rstick_left_action = 0;
-	int rstick_right_action = 0;
-	int rstick_up_action = 0;
-	int rstick_down_action = 0;
-};
-#endif
-
 #define MAX_JPORTS_CUSTOM 6
 #define MAX_JPORTS 4
 #define NORMAL_JPORTS 2
@@ -125,7 +100,7 @@ struct inputdevconfig
 struct jport
 {
 	int id{};
-	int mode{}; // 0=def,1=mouse,2=joy,3=anajoy,4=lightpen
+	int mode{}; // 0=default,1=wheel mouse,2=mouse,3=joystick,4=gamepad,5=analog joystick,6=cdtv,7=cd32
 	int submode;
 	int autofire{};
 	struct inputdevconfig idc{};
@@ -133,10 +108,8 @@ struct jport
 	bool changed{};
 #ifdef AMIBERRY
 	int mousemap{};
-	struct joypad_map_layout amiberry_custom_none;
-	struct joypad_map_layout amiberry_custom_hotkey;
-	struct joypad_map_layout amiberry_custom_left_trigger;
-	struct joypad_map_layout amiberry_custom_right_trigger;
+	std::array<int, SDL_CONTROLLER_BUTTON_MAX> amiberry_custom_none;
+	std::array<int, SDL_CONTROLLER_BUTTON_MAX> amiberry_custom_hotkey;
 #endif
 };
 
@@ -427,7 +400,8 @@ struct gfx_filterdata
 	int gfx_filter_keep_autoscale_aspect;
 };
 
-#define MAX_DUPLICATE_EXPANSION_BOARDS 4
+#define MAX_DUPLICATE_EXPANSION_BOARDS 5
+#define MAX_AVAILABLE_DUPLICATE_EXPANSION_BOARDS 4
 #define MAX_EXPANSION_BOARDS 20
 #define ROMCONFIG_CONFIGTEXT_LEN 256
 struct boardromconfig;
@@ -439,6 +413,7 @@ struct romconfig
 	uae_u32 board_ram_size;
 	bool autoboot_disabled;
 	bool inserted;
+	bool dma24bit;
 	int device_id;
 	int device_settings;
 	int subtype;
@@ -504,6 +479,8 @@ struct ramboard
 	uae_u32 end_address;
 	uae_u32 write_address;
 	bool readonly;
+	bool nodma;
+	bool force16bit;
 	struct boardloadfile lf;
 };
 
@@ -533,10 +510,11 @@ struct whdbooter
 	int custom3 = 0;
 	int custom4 = 0;
 	int custom5 = 0;
-	TCHAR custom[256];
-	bool buttonwait;
-	TCHAR slave[4096];
-	bool showsplash;
+	TCHAR custom[256]{};
+	bool buttonwait{};
+	TCHAR slave[4096]{};
+	bool showsplash{};
+	int configdelay = 0;
 };
 #endif
 
@@ -614,10 +592,11 @@ struct uae_prefs
 	bool comp_constjump;
 	bool comp_catchfault;
 	int cachesize;
+	TCHAR jitblacklist[MAX_DPATH];
 	bool fpu_strict;
 	int fpu_mode;
 
-	struct monconfig gfx_monitor;
+	struct monconfig gfx_monitor[MAX_AMIGADISPLAYS];
 	int gfx_framerate, gfx_autoframerate;
 	bool gfx_autoresolution_vga;
 	int gfx_autoresolution;
@@ -822,20 +801,19 @@ struct uae_prefs
 	struct ramboard z3fastmem[MAX_RAM_BOARDS];
 	struct ramboard fastmem[MAX_RAM_BOARDS];
 	struct romboard romboards[MAX_ROM_BOARDS];
-	uae_u32 z3chipmem_size;
-	uae_u32 z3chipmem_start;
-	uae_u32 chipmem_size;
-	uae_u32 bogomem_size;
-	uae_u32 mbresmem_low_size;
-	uae_u32 mbresmem_high_size;
-	uae_u32 mem25bit_size;
+	struct ramboard z3chipmem;
+	struct ramboard chipmem;
+	struct ramboard bogomem;
+	struct ramboard mbresmem_low;
+	struct ramboard mbresmem_high;
+	struct ramboard mem25bit;
 	uae_u32 debugmem_start;
 	uae_u32 debugmem_size;
 	int cpuboard_type;
 	int cpuboard_subtype;
 	int cpuboard_settings;
-	uae_u32 cpuboardmem1_size;
-	uae_u32 cpuboardmem2_size;
+	struct ramboard cpuboardmem1;
+	struct ramboard cpuboardmem2;
 	int ppc_implementation;
 	bool rtg_hardwareinterrupt;
 	bool rtg_hardwaresprite;
@@ -888,6 +866,13 @@ struct uae_prefs
 	int gfx_correct_aspect;
 	int scaling_method;
 
+	bool gui_alwaysontop;
+	bool main_alwaysontop;
+	bool minimize_inactive;
+	bool capture_always;
+	bool start_minimized;
+	bool start_uncaptured;
+	
 	int active_capture_priority;
 	bool active_nocapture_pause;
 	bool active_nocapture_nosound;
@@ -899,11 +884,25 @@ struct uae_prefs
 	bool minimized_pause;
 	bool minimized_nosound;
 	int minimized_input;
+
+	bool rtgmatchdepth;
+	bool rtgallowscaling;
+	int rtgscaleaspectratio;
+	int rtgvblankrate;
+	bool borderless;
+	bool automount_removable;
+	bool automount_cddrives;
+	int uaescsimode;
+	bool blankmonitors;
+	bool right_control_is_right_win_key;
+
+	int statecapturerate, statecapturebuffersize;
 	
 	TCHAR open_gui[256];
 	TCHAR quit_amiberry[256];
 	TCHAR action_replay[256];
 	TCHAR fullscreen_toggle[256];
+	TCHAR minimize[256];
 
 	/* input */
 
@@ -934,7 +933,8 @@ struct uae_prefs
 	int input_device_match_mask;
 
 #ifdef AMIBERRY
-	bool allow_host_run;
+	bool alt_tab_release;
+	int sound_pullmode;
 	bool input_analog_remap;
 	bool use_retroarch_quit;
 	bool use_retroarch_menu;
@@ -947,40 +947,6 @@ struct uae_prefs
 
 	struct whdbooter whdbootprefs;
 
-#endif
-
-	/* ANDROID */
-#ifdef ANDROID
-	int onScreen;
-	int onScreen_textinput;
-	int onScreen_dpad;
-	int onScreen_button1;
-	int onScreen_button2;
-	int onScreen_button3;
-	int onScreen_button4;
-	int onScreen_button5;
-	int onScreen_button6;
-	int custom_position;
-	int pos_x_textinput;
-	int pos_y_textinput;
-	int pos_x_dpad;
-	int pos_y_dpad;
-	int pos_x_button1;
-	int pos_y_button1;
-	int pos_x_button2;
-	int pos_y_button2;
-	int pos_x_button3;
-	int pos_y_button3;
-	int pos_x_button4;
-	int pos_y_button4;
-	int pos_x_button5;
-	int pos_y_button5;
-	int pos_x_button6;
-	int pos_y_button6;
-	int extfilter;
-	int quickSwitch;
-	int floatingJoystick;
-	int disableMenuVKeyb;
 #endif
 };
 
@@ -1099,14 +1065,58 @@ extern struct uae_prefs currprefs, changed_prefs;
 extern int machdep_init(void);
 extern void machdep_free(void);
 
+struct fsvdlg_vals
+{
+	struct uaedev_config_info ci;
+	int rdb;
+};
+
+struct hfdlg_vals
+{
+	struct uaedev_config_info ci;
+	bool original;
+	uae_u64 size;
+	uae_u32 dostype;
+	int forcedcylinders;
+	bool rdb;
+};
+extern struct fsvdlg_vals current_fsvdlg;
+extern struct hfdlg_vals current_hfdlg;
+
+extern void hardfile_testrdb (struct hfdlg_vals *hdf);
+extern void default_fsvdlg (struct fsvdlg_vals *f);
+extern void default_hfdlg (struct hfdlg_vals *f);
+STATIC_INLINE bool is_hdf_rdb (void)
+{
+	return current_hfdlg.ci.sectors == 0 && current_hfdlg.ci.surfaces == 0 && current_hfdlg.ci.reserved == 0;
+}
+extern void updatehdfinfo (bool force, bool defaults);
+
 #ifdef AMIBERRY
 struct amiberry_customised_layout
 {
 	// create structures for each 'function' button
-	struct joypad_map_layout none;
-	struct joypad_map_layout select;
-	struct joypad_map_layout left_trigger;
-	struct joypad_map_layout right_trigger;
+	std::array<int, 15> none;
+	std::array<int, 15> select;
+};
+
+struct hotkey_modifiers
+{
+	bool lctrl;
+	bool rctrl;
+	bool lalt;
+	bool ralt;
+	bool lshift;
+	bool rshift;
+	bool lgui;
+	bool rgui;
+};
+struct amiberry_hotkey
+{
+	int scancode;
+	std::string key_name;
+	std::string modifiers_string;
+	hotkey_modifiers modifiers;
 };
 
 struct amiberry_options
@@ -1114,7 +1124,7 @@ struct amiberry_options
 	bool quickstart_start = true;
 	bool read_config_descriptions = true;
 	bool write_logfile = false;
-	bool swap_win_alt_keys = false;
+	bool rctrl_as_ramiga = false;
 	bool gui_joystick_control = true;
 #ifdef USE_RENDER_THREAD
 	bool use_sdl2_render_thread = true;
@@ -1135,10 +1145,11 @@ struct amiberry_options
 	bool default_frameskip = false;
 	bool default_correct_aspect_ratio = true;
 	bool default_auto_height = false;
-	int default_width = 720;
-	int default_height = 270;
+	int default_width = 640;
+	int default_height = 512;
 	bool default_fullscreen = false;
 	int default_stereo_separation = 7;
+	int default_sound_buffer = 16384;
 	int default_joystick_deadzone = 33;
 	bool default_retroarch_quit = true;
 	bool default_retroarch_menu = true;
@@ -1149,6 +1160,9 @@ struct amiberry_options
 	char default_controller4[128]{};
 	char default_mouse1[128] = "mouse";
 	char default_mouse2[128] = "joy0";
+	bool default_whd_buttonwait = false;
+	bool default_whd_showsplash = true;
+	int default_whd_configdelay = 0;
 };
 
 extern struct amiberry_options amiberry_options;

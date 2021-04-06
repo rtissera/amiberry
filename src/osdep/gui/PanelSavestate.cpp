@@ -1,6 +1,5 @@
-#include <string.h>
-#include <stdio.h>
-#include <stdbool.h>
+#include <cstring>
+#include <cstdio>
 
 #include <guisan.hpp>
 #include <SDL_ttf.h>
@@ -10,7 +9,6 @@
 #include "SelectorEntry.hpp"
 
 #include "sysdeps.h"
-#include "xwin.h"
 #include "gui.h"
 #include "savestate.h"
 #include "gui_handling.h"
@@ -76,7 +74,7 @@ public:
 					if (f)
 					{
 						fclose(f);
-						savestate_initsave(savestate_fname);
+						savestate_initsave(savestate_fname, 1, true, true);
 						savestate_state = STATE_DORESTORE;
 						gui_running = false;
 					}
@@ -91,12 +89,16 @@ public:
 		}
 		else if (actionEvent.getSource() == cmdSaveState)
 		{
+			if (changed_prefs.mountitems)
+			{
+				ShowMessage("Error: Cannot create Savestate", "Savestates do not currently work with HDDs!", "", "Ok", "");
+			}
 			//------------------------------------------
 			// Save current state
 			//------------------------------------------
-			if (emulating)
+			else if (emulating)
 			{
-				savestate_initsave(savestate_fname);
+				savestate_initsave(savestate_fname, 1, true, true);
 				save_state(savestate_fname, "...");
 				savestate_state = STATE_DOSAVE; // Just to create the screenshot
 				delay_savestate_frame = 2;
@@ -177,7 +179,7 @@ void InitPanelSavestate(const struct _ConfigCategory& category)
 
 	grpScreenshot = new gcn::Window("State screen");
 	grpScreenshot->setMovable(false);
-	grpScreenshot->setSize(300, 300);
+	grpScreenshot->setSize(320, 320);
 	grpScreenshot->setTitleBarHeight(TITLEBAR_HEIGHT);
 	grpScreenshot->setBaseColor(gui_baseCol);
 

@@ -1,6 +1,5 @@
-#include <stdbool.h>
-#include <string.h>
-#include <stdio.h>
+#include <cstring>
+#include <cstdio>
 
 #include <guisan.hpp>
 #include <guisan/sdl.hpp>
@@ -13,8 +12,8 @@
 #include "options.h"
 #include "filesys.h"
 #include "gui_handling.h"
-#include "inputdevice.h"
 #include "amiberry_gfx.h"
+#include "amiberry_input.h"
 
 #ifdef ANDROID
 #include "androidsdl_event.h"
@@ -23,7 +22,7 @@
 #define DIALOG_WIDTH 620
 #define DIALOG_HEIGHT 202
 
-static const char *harddisk_filter[] = {".hdf", "\0"};
+static const char *harddisk_filter[] = { ".hdf", ".vhd", "\0" };
 
 static bool dialogResult = false;
 static bool dialogFinished = false;
@@ -42,6 +41,7 @@ static gcn::TextField *txtPath;
 static gcn::Button *cmdPath;
 static gcn::Label *lblSize;
 static gcn::TextField *txtSize;
+static gcn::CheckBox* chkDynamic;
 
 class CreateFilesysHardfileActionListener : public gcn::ActionListener
 {
@@ -129,6 +129,9 @@ static void InitCreateFilesysHardfile()
 	txtSize = new gcn::TextField();
 	txtSize->setSize(60, TEXTFIELD_HEIGHT);
 
+	chkDynamic = new gcn::CheckBox("Dynamic VHD", true);
+	chkDynamic->setId("chkDynamic");
+
 	lblPath = new gcn::Label("Path:");
 	lblPath->setAlignment(gcn::Graphics::RIGHT);
 	txtPath = new gcn::TextField();
@@ -164,6 +167,7 @@ static void InitCreateFilesysHardfile()
 
 	wndCreateFilesysHardfile->add(lblSize, lblDevice->getX(), posY);
 	wndCreateFilesysHardfile->add(txtSize, txtDevice->getX(), posY);
+	wndCreateFilesysHardfile->add(chkDynamic, txtSize->getX() + txtSize->getWidth() + DISTANCE_NEXT_X, posY);
 
 	wndCreateFilesysHardfile->add(cmdOK);
 	wndCreateFilesysHardfile->add(cmdCancel);
@@ -189,6 +193,7 @@ static void ExitCreateFilesysHardfile()
 	delete cmdPath;
 	delete lblSize;
 	delete txtSize;
+	delete chkDynamic;
 
 	delete cmdOK;
 	delete cmdCancel;
@@ -201,15 +206,16 @@ static void CreateFilesysHardfileLoop()
 {
 	//FocusBugWorkaround(wndCreateFilesysHardfile);
 
-	int gotEvent = 0;
+	int got_event = 0;
 	SDL_Event event;
 	SDL_Event touch_event;
+	struct didata* did = &di_joystick[0];
 	while (SDL_PollEvent(&event))
 	{
 		switch (event.type)
 		{
 		case SDL_KEYDOWN:
-			gotEvent = 1;
+			got_event = 1;
 			switch (event.key.keysym.sym)
 			{
 			case VK_ESCAPE:
@@ -250,52 +256,48 @@ static void CreateFilesysHardfileLoop()
 
 		case SDL_JOYBUTTONDOWN:
 		case SDL_JOYHATMOTION:
-		case SDL_JOYAXISMOTION:
 			if (gui_joystick)
 			{
-				gotEvent = 1;
+				got_event = 1;
 				const int hat = SDL_JoystickGetHat(gui_joystick, 0);
-
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_up) || (hat & SDL_HAT_UP) ||
-					SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_y) == -32768) // dpad
+				
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_UP]) || hat & SDL_HAT_UP)
 				{
 					if (HandleNavigation(DIRECTION_UP))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_UP);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_down) || (hat & SDL_HAT_DOWN) ||
-					SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_y) == 32767) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_DOWN]) || hat & SDL_HAT_DOWN)
 				{
 					if (HandleNavigation(DIRECTION_DOWN))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_DOWN);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_right) || (hat & SDL_HAT_RIGHT) || SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_x) == 32767) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_RIGHT]) || hat & SDL_HAT_RIGHT)
 				{
 					if (HandleNavigation(DIRECTION_RIGHT))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_RIGHT);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_left) || (hat & SDL_HAT_LEFT) ||
-					SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_x) == -32768) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_LEFT]) || hat & SDL_HAT_LEFT)
 				{
 					if (HandleNavigation(DIRECTION_LEFT))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_LEFT);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].south_button))
-					// need this to be X button
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_A]) ||
+					SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_B]))
 				{
 					PushFakeKey(SDLK_RETURN);
 					continue;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].east_button) ||
-					SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].start_button))
-					// need this to be START button
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_X]) ||
+					SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_Y]) ||
+					SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_START]))
 				{
 					dialogFinished = true;
 					break;
@@ -303,8 +305,57 @@ static void CreateFilesysHardfileLoop()
 			}
 			break;
 
+		case SDL_JOYAXISMOTION:
+			if (gui_joystick)
+			{
+				got_event = 1;
+				if (event.jaxis.axis == SDL_CONTROLLER_AXIS_LEFTX)
+				{
+					if (event.jaxis.value > joystick_dead_zone && last_x != 1)
+					{
+						last_x = 1;
+						if (HandleNavigation(DIRECTION_RIGHT))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_RIGHT);
+						break;
+					}
+					if (event.jaxis.value < -joystick_dead_zone && last_x != -1)
+					{
+						last_x = -1;
+						if (HandleNavigation(DIRECTION_LEFT))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_LEFT);
+						break;
+					}
+					if (event.jaxis.value > -joystick_dead_zone && event.jaxis.value < joystick_dead_zone)
+						last_x = 0;
+				}
+				else if (event.jaxis.axis == SDL_CONTROLLER_AXIS_LEFTY)
+				{
+					if (event.jaxis.value < -joystick_dead_zone && last_y != -1)
+					{
+						last_y = -1;
+						if (HandleNavigation(DIRECTION_UP))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_UP);
+						break;
+					}
+					if (event.jaxis.value > joystick_dead_zone && last_y != 1)
+					{
+						last_y = 1;
+						if (HandleNavigation(DIRECTION_DOWN))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_DOWN);
+						break;
+					}
+					if (event.jaxis.value > -joystick_dead_zone && event.jaxis.value < joystick_dead_zone)
+						last_y = 0;
+				}
+			}
+			break;
+
 		case SDL_FINGERDOWN:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &event, sizeof event);
 			touch_event.type = SDL_MOUSEBUTTONDOWN;
 			touch_event.button.which = 0;
@@ -316,7 +367,7 @@ static void CreateFilesysHardfileLoop()
 			break;
 
 		case SDL_FINGERUP:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &event, sizeof event);
 			touch_event.type = SDL_MOUSEBUTTONUP;
 			touch_event.button.which = 0;
@@ -328,7 +379,7 @@ static void CreateFilesysHardfileLoop()
 			break;
 
 		case SDL_FINGERMOTION:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &event, sizeof event);
 			touch_event.type = SDL_MOUSEMOTION;
 			touch_event.motion.which = 0;
@@ -344,7 +395,7 @@ static void CreateFilesysHardfileLoop()
 		case SDL_MOUSEBUTTONUP:
 		case SDL_MOUSEMOTION:
 		case SDL_MOUSEWHEEL:
-			gotEvent = 1;
+			got_event = 1;
 			break;
 			
 		default:
@@ -361,10 +412,11 @@ static void CreateFilesysHardfileLoop()
 #endif
 	}
 
-	if (gotEvent)
+	if (got_event)
 	{
 		// Now we let the Gui object perform its logic.
 		uae_gui->logic();
+		SDL_RenderClear(sdl_renderer);
 		// Now we let the Gui object draw itself.
 		uae_gui->draw();
 		// Finally we update the screen.
@@ -391,9 +443,11 @@ bool CreateFilesysHardfile()
 
 	txtBootPri->setText("0");
 	txtSize->setText("100");
+	chkDynamic->setSelected(false);
 
 	// Prepare the screen once
 	uae_gui->logic();
+	SDL_RenderClear(sdl_renderer);
 	uae_gui->draw();
 	update_gui_screen();
 
@@ -401,7 +455,7 @@ bool CreateFilesysHardfile()
 	{
 		const auto start = SDL_GetPerformanceCounter();
 		CreateFilesysHardfileLoop();
-		cap_fps(start, 60);
+		cap_fps(start);
 	}
 
 	if (dialogResult)
@@ -410,50 +464,78 @@ bool CreateFilesysHardfile()
 		if (size < 1)
 			size = 1;
 
-		const auto bp = tweakbootpri(atoi(txtBootPri->getText().c_str()), 1, 0);
-
-		auto* const newFile = fopen(txtPath->getText().c_str(), "wbe");
-		if (!newFile)
-		{
-			write_log("Unable to create new file.");
-			ExitCreateFilesysHardfile();
-			return false;
+		char init_path[MAX_DPATH];
+		_tcsncpy(init_path, txtPath->getText().c_str(), MAX_DPATH - 1);
+		if (chkDynamic->isSelected()) {
+			if (_tcslen(init_path) > 4 && !_tcsicmp(init_path + _tcslen(init_path) - 4, _T(".hdf")))
+				_tcscpy(init_path + _tcslen(init_path) - 4, _T(".vhd"));
+			const bool result = vhd_create(init_path, size * 1024 * 1024, 0);
+			if (!result) {
+				ShowMessage("Create Hardfile", "Unable to create new VHD file.", "", "Ok", "");
+				ExitCreateFilesysHardfile();
+				dialogResult = false;
+			}
 		}
-		if (_fseeki64(newFile, size * 1024 * 1024 - 1, SEEK_SET) == 0)
-		{
-			fwrite(&zero, 1, 1, newFile);
-			fclose(newFile);
-		}
-		else
-		{
-			write_log("Unable to create new file size.");
-			fclose(newFile);
-			ExitCreateFilesysHardfile();
-			return false;
+		else {
+			FILE* newFile = fopen(init_path, "wb");
+			if (!newFile)
+			{
+				ShowMessage("Create Hardfile", "Unable to create new file.", "", "Ok", "");
+				ExitCreateFilesysHardfile();
+				return false;
+			}
+			if (_fseeki64(newFile, size * 1024 * 1024 - 1, SEEK_SET) == 0)
+			{
+				fwrite(&zero, 1, 1, newFile);
+				fclose(newFile);
+			}
+			else
+			{
+				fclose(newFile);
+				ShowMessage("Create Hardfile", "Unable to create new file size.", "", "Ok", "");
+				ExitCreateFilesysHardfile();
+				dialogResult = false;
+			}
 		}
 		
-		struct uaedev_config_info ci
-		{
-		};
+		if (dialogResult) {
+			struct uaedev_config_data* uci;
+			struct uaedev_config_info ci;
 
-		uci_set_defaults(&ci, false);
-		strncpy(ci.devname, const_cast<char *>(txtDevice->getText().c_str()), MAX_DPATH);
-		strncpy(ci.rootdir, const_cast<char *>(txtPath->getText().c_str()), MAX_DPATH);
-		ci.type = UAEDEV_HDF;
-		ci.surfaces = (size / 1024) + 1;
-		ci.bootpri = bp;
+			uci_set_defaults(&ci, false);
+			strncpy(ci.devname, (char*)txtDevice->getText().c_str(), MAX_DPATH - 1);
+			strncpy(ci.rootdir, (char*)init_path, MAX_DPATH - 1);
+			ci.type = UAEDEV_HDF;
+			ci.surfaces = (size / 1024) + 1;
 
-		ci.controller_type = 0;
-		ci.controller_type_unit = 0;
-		ci.controller_unit = 0;
-		ci.unit_feature_level = 1;
-		ci.readonly = false;
-		auto* const uci = add_filesys_config(&changed_prefs, -1, &ci);
-		if (uci)
-		{
-			auto* const hfd = get_hardfile_data(uci->configoffset);
-			if (hfd)
-				hardfile_media_change(hfd, &ci, true, false);
+			ci.bootpri = atoi(txtBootPri->getText().c_str());
+			if (ci.bootpri < -127)
+				ci.bootpri = -127;
+			if (ci.bootpri > 127)
+				ci.bootpri = 127;
+			if (!chkAutoboot->isSelected()) {
+				ci.bootpri = BOOTPRI_NOAUTOBOOT;
+			}
+
+			ci.controller_type = 0;
+			ci.controller_type_unit = 0;
+			ci.controller_unit = 0;
+			ci.unit_feature_level = 1;
+			ci.readonly = 0;
+
+			int blocksize = 512;
+			uae_u64 bsize = size * 1024 * 1024;
+			bsize &= ~(blocksize - 1);
+
+			getchspgeometry(bsize, &ci.pcyls, &ci.pheads, &ci.psecs, false);
+			gethdfgeometry(bsize, &ci);
+
+			uci = add_filesys_config(&changed_prefs, -1, &ci);
+			if (uci) {
+				struct hardfiledata* hfd = get_hardfile_data(uci->configoffset);
+				if (hfd)
+					hardfile_media_change(hfd, &ci, true, false);
+			}
 		}
 	}
 

@@ -158,17 +158,10 @@ struct inputevent {
 #define SET_ONOFF_OFF_VALUE 0x7fffff00
 #define SET_ONOFF_MASK_PRESS 15
 
-#ifdef AMIBERRY
-#define ID_BUTTON_OFFSET 0
-#define ID_BUTTON_TOTAL 128
-#define ID_AXIS_OFFSET 128
-#define ID_AXIS_TOTAL 64
-#else
 #define ID_BUTTON_OFFSET 0
 #define ID_BUTTON_TOTAL 32
 #define ID_AXIS_OFFSET 32
 #define ID_AXIS_TOTAL 32
-#endif
 
 #define MAX_COMPA_INPUTLIST 30
 
@@ -242,7 +235,7 @@ extern void input_mousehack_mouseoffset (uaecptr pointerprefs);
 extern int mousehack_alive (void);
 extern void mousehack_wakeup(void);
 extern void mousehack_write(int reg, uae_u16 val);
-extern void setmouseactive(int);
+extern void setmouseactive(int monid, int);
 extern bool ismouseactive(void);
 
 extern void setmousebuttonstateall (int mouse, uae_u32 buttonbits, uae_u32 buttonmask);
@@ -353,9 +346,15 @@ extern void setsystime (void);
 #define JSEM_ISNUMPAD(port,p) (jsem_iskbdjoy(port,p) == JSEM_KBDLAYOUT)
 #define JSEM_ISCURSOR(port,p) (jsem_iskbdjoy(port,p) == JSEM_KBDLAYOUT + 1)
 #define JSEM_ISSOMEWHEREELSE(port,p) (jsem_iskbdjoy(port,p) == JSEM_KBDLAYOUT + 2)
+#define JSEM_ISKEYRAH(port,p) (jsem_iskbdjoy(port,p) == JSEM_KBDLAYOUT + 3)
+#define JSEM_ISRAPLAYER1(port,p) (jsem_iskbdjoy(port,p) == JSEM_KBDLAYOUT + 4)
+#define JSEM_ISRAPLAYER2(port,p) (jsem_iskbdjoy(port,p) == JSEM_KBDLAYOUT + 5)
+#define JSEM_ISRAPLAYER3(port,p) (jsem_iskbdjoy(port,p) == JSEM_KBDLAYOUT + 6)
+#define JSEM_ISRAPLAYER4(port,p) (jsem_iskbdjoy(port,p) == JSEM_KBDLAYOUT + 7)
+
 #define JSEM_ISCUSTOM(port,p) ((p)->jports[port].id >= JSEM_CUSTOM && (p)->jports[port].id < JSEM_CUSTOM + MAX_JPORTS_CUSTOM)
 #define JSEM_GETCUSTOMIDX(port,p) ((p)->jports[port].id - JSEM_CUSTOM)
-#define JSEM_LASTKBD 3
+#define JSEM_LASTKBD 8
 #define JSEM_ISANYKBD(port,p) (jsem_iskbdjoy(port,p) >= JSEM_KBDLAYOUT && jsem_iskbdjoy(port,p) < JSEM_KBDLAYOUT + JSEM_LASTKBD)
 
 extern int jsem_isjoy (int port, const struct uae_prefs *p);
@@ -373,88 +372,5 @@ extern void inputdevice_settest (int);
 extern int inputdevice_testread_count (void);
 
 extern bool target_can_autoswitchdevice(void);
-
-#ifdef AMIBERRY
-struct host_input_button {
-	int north_button;
-	int east_button;
-	int south_button;
-	int west_button;
-	int dpad_left;
-	int dpad_right;
-	int dpad_up;
-	int dpad_down;
-	int select_button;
-	int start_button;
-
-	int left_shoulder;
-	int right_shoulder;
-	int left_trigger;
-	int right_trigger;
-
-	int lstick_button;
-	int lstick_axis_y;
-	bool lstick_axis_y_invert;
-	int lstick_axis_x;
-	bool lstick_axis_x_invert;
-	int lstick_left;
-	int lstick_right;
-	int lstick_up;
-	int lstick_down;
-
-	int rstick_button;
-	int rstick_axis_y;
-	bool rstick_axis_y_invert;
-	int rstick_axis_x;
-	bool rstick_axis_x_invert;
-	int rstick_left;
-	int rstick_right;
-	int rstick_up;
-	int rstick_down;
-
-	int hotkey_button;
-	int quit_button;
-	int menu_button;
-	int reset_button;
-	int load_state_button;
-	int save_state_button;
-
-	int number_of_hats;
-	int number_of_axis;
-
-	bool is_retroarch;
-};
-
-struct host_keyboard_button {
-
-	int north_button;
-	int east_button;
-	int south_button;
-	int west_button;
-	int dpad_left;
-	int dpad_right;
-	int dpad_up;
-	int dpad_down;
-	int left_shoulder;
-	int right_shoulder;
-	int select_button;
-	int start_button;
-	int lstick_button;
-	int rstick_button;
-
-	int hotkey_button;
-	int quit_button;
-	int menu_button;
-
-	bool is_retroarch;
-};
-
-extern struct host_input_button host_input_buttons[MAX_INPUT_DEVICES];
-extern int multipler_maps[MAX_JPORTS];
-extern int find_in_array(const int arr[], int n, int key);
-extern int num_keys_as_joys;
-
-extern bool key_used_by_retroarch_joy(int scancode);
-#endif
 
 #endif /* UAE_INPUTDEVICE_H */

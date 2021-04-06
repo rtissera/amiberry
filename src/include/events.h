@@ -13,6 +13,7 @@
 #define UAE_EVENTS_H
 
 #include "uae/types.h"
+
 #include "machdep/rpt.h"
 
 extern frame_time_t vsyncmintime, vsyncmintimepre;
@@ -23,22 +24,26 @@ extern unsigned long int vsync_cycles;
 extern unsigned long start_cycles;
 extern int event2_count;
 extern bool event_wait;
-extern int speedup_timelimit;
 
 extern void compute_vsynctime (void);
 extern void init_eventtab (void);
+extern void do_cycles_ce (unsigned long cycles);
+extern void do_cycles_ce020 (unsigned long cycles);
 extern void events_schedule (void);
+extern void do_cycles_slow (unsigned long cycles_to_add);
 extern void events_reset_syncline(void);
+
+extern bool is_cycle_ce(uaecptr);
 
 extern unsigned long currcycle, nextevent;
 extern int is_syncline, is_syncline_end;
 typedef void (*evfunc)(void);
 typedef void (*evfunc2)(uae_u32);
 
-typedef void (*do_cycles_func)(uae_u32);
+typedef void (*do_cycles_func)(unsigned long);
 extern do_cycles_func do_cycles;
-void do_cycles_cpu_fastest (uae_u32 cycles_to_add);
-void do_cycles_cpu_norm (uae_u32 cycles_to_add);
+void do_cycles_cpu_fastest(unsigned long cycles_to_add);
+void do_cycles_cpu_norm(unsigned long cycles_to_add);
 
 typedef unsigned long int evt;
 
@@ -85,8 +90,7 @@ STATIC_INLINE void cycles_do_special (void)
 	if (currprefs.cachesize) {
 		if (pissoff >= 0)
 			pissoff = -1;
-	}
-	else
+	} else
 #endif
 	{
 		pissoff = 0;
@@ -109,11 +113,13 @@ STATIC_INLINE void set_cycles (unsigned long int x)
 	eventtab[ev_hsync].oldcycles = x;
 }
 
-STATIC_INLINE int current_hpos(void)
+STATIC_INLINE int current_hpos_safe (void)
 {
-	const int hp = (get_cycles() - eventtab[ev_hsync].oldcycles) / CYCLE_UNIT;
-    return hp;
+    int hp = (get_cycles () - eventtab[ev_hsync].oldcycles) / CYCLE_UNIT;
+	return hp;
 }
+
+extern int current_hpos(void);
 
 STATIC_INLINE bool cycles_in_range (unsigned long endcycles)
 {

@@ -1,6 +1,5 @@
-#include <stdbool.h>
-#include <string.h>
-#include <stdio.h>
+#include <cstring>
+#include <cstdio>
 
 #include <guisan.hpp>
 #include <SDL_ttf.h>
@@ -15,8 +14,8 @@
 #include "autoconf.h"
 #include "gui_handling.h"
 
-#include "inputdevice.h"
 #include "amiberry_gfx.h"
+#include "amiberry_input.h"
 
 #ifdef ANDROID
 #include "androidsdl_event.h"
@@ -60,9 +59,24 @@ public:
 			{
 				txtPath->setText(tmp);
 				txtVolume->setText(volName);
+				default_fsvdlg(&current_fsvdlg);
+				CreateDefaultDevicename(current_fsvdlg.ci.devname);
+				_tcscpy(current_fsvdlg.ci.volname, current_fsvdlg.ci.devname);
+				_tcscpy(current_fsvdlg.ci.rootdir, tmp);
 			}
 			wndEditFilesysVirtual->requestModalFocus();
 			cmdPath->requestFocus();
+		}
+		else if (actionEvent.getSource() == chkAutoboot) {
+			char tmp[32];
+			if (chkAutoboot->isSelected()) {
+				current_fsvdlg.ci.bootpri = 0;
+			}
+			else {
+				current_fsvdlg.ci.bootpri = BOOTPRI_NOAUTOBOOT;
+			}
+			snprintf(tmp, sizeof(tmp) - 1, "%d", current_fsvdlg.ci.bootpri);
+			txtBootPri->setText(tmp);
 		}
 		else
 		{
@@ -141,6 +155,7 @@ static void InitEditFilesysVirtual()
 
 	chkAutoboot = new gcn::CheckBox("Bootable", true);
 	chkAutoboot->setId("virtAutoboot");
+	chkAutoboot->addActionListener(filesysVirtualActionListener);
 
 	lblBootPri = new gcn::Label("Boot priority:");
 	lblBootPri->setAlignment(gcn::Graphics::RIGHT);
@@ -212,15 +227,16 @@ static void EditFilesysVirtualLoop()
 {
 	//FocusBugWorkaround(wndEditFilesysVirtual);
 
-	int gotEvent = 0;
+	int got_event = 0;
 	SDL_Event event;
 	SDL_Event touch_event;
+	struct didata* did = &di_joystick[0];
 	while (SDL_PollEvent(&event))
 	{
 		switch (event.type)
 		{
 		case SDL_KEYDOWN:
-			gotEvent = 1;
+			got_event = 1;
 			switch (event.key.keysym.sym)
 			{
 			case VK_ESCAPE:
@@ -260,47 +276,48 @@ static void EditFilesysVirtualLoop()
 
 		case SDL_JOYBUTTONDOWN:
 		case SDL_JOYHATMOTION:
-		case SDL_JOYAXISMOTION:
 			if (gui_joystick)
 			{
-				gotEvent = 1;
+				got_event = 1;
 				const int hat = SDL_JoystickGetHat(gui_joystick, 0);
-
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_up) || (hat & SDL_HAT_UP) || SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_y) == -32768) // dpad
+				
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_UP]) || (hat & SDL_HAT_UP)) // dpad
 				{
 					if (HandleNavigation(DIRECTION_UP))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_UP);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_down) || (hat & SDL_HAT_DOWN) || SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_y) == 32767) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_DOWN]) || (hat & SDL_HAT_DOWN)) // dpad
 				{
 					if (HandleNavigation(DIRECTION_DOWN))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_DOWN);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_right) || (hat & SDL_HAT_RIGHT) || SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_x) == 32767) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_RIGHT]) || (hat & SDL_HAT_RIGHT)) // dpad
 				{
 					if (HandleNavigation(DIRECTION_RIGHT))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_RIGHT);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_left) || (hat & SDL_HAT_LEFT) || SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_x) == -32768) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_LEFT]) || (hat & SDL_HAT_LEFT)) // dpad
 				{
 					if (HandleNavigation(DIRECTION_LEFT))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_LEFT);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].south_button)) // need this to be X button
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_A]) ||
+					SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_B]))
 				{
 					PushFakeKey(SDLK_RETURN);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].east_button) ||
-					SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].start_button)) // need this to be START button
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_X]) ||
+					SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_Y]) ||
+					SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_START]))
 				{
 					dialogFinished = true;
 					break;
@@ -308,8 +325,57 @@ static void EditFilesysVirtualLoop()
 			}
 			break;
 
+		case SDL_JOYAXISMOTION:
+			if (gui_joystick)
+			{
+				got_event = 1;
+				if (event.jaxis.axis == SDL_CONTROLLER_AXIS_LEFTX)
+				{
+					if (event.jaxis.value > joystick_dead_zone && last_x != 1)
+					{
+						last_x = 1;
+						if (HandleNavigation(DIRECTION_RIGHT))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_RIGHT);
+						break;
+					}
+					if (event.jaxis.value < -joystick_dead_zone && last_x != -1)
+					{
+						last_x = -1;
+						if (HandleNavigation(DIRECTION_LEFT))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_LEFT);
+						break;
+					}
+					if (event.jaxis.value > -joystick_dead_zone && event.jaxis.value < joystick_dead_zone)
+						last_x = 0;
+				}
+				else if (event.jaxis.axis == SDL_CONTROLLER_AXIS_LEFTY)
+				{
+					if (event.jaxis.value < -joystick_dead_zone && last_y != -1)
+					{
+						last_y = -1;
+						if (HandleNavigation(DIRECTION_UP))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_UP);
+						break;
+					}
+					if (event.jaxis.value > joystick_dead_zone && last_y != 1)
+					{
+						last_y = 1;
+						if (HandleNavigation(DIRECTION_DOWN))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_DOWN);
+						break;
+					}
+					if (event.jaxis.value > -joystick_dead_zone && event.jaxis.value < joystick_dead_zone)
+						last_y = 0;
+				}
+			}
+			break;
+			
 		case SDL_FINGERDOWN:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &event, sizeof event);
 			touch_event.type = SDL_MOUSEBUTTONDOWN;
 			touch_event.button.which = 0;
@@ -321,7 +387,7 @@ static void EditFilesysVirtualLoop()
 			break;
 
 		case SDL_FINGERUP:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &event, sizeof event);
 			touch_event.type = SDL_MOUSEBUTTONUP;
 			touch_event.button.which = 0;
@@ -333,7 +399,7 @@ static void EditFilesysVirtualLoop()
 			break;
 
 		case SDL_FINGERMOTION:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &event, sizeof event);
 			touch_event.type = SDL_MOUSEMOTION;
 			touch_event.motion.which = 0;
@@ -349,7 +415,7 @@ static void EditFilesysVirtualLoop()
 		case SDL_MOUSEBUTTONUP:
 		case SDL_MOUSEMOTION:
 		case SDL_MOUSEWHEEL:
-			gotEvent = 1;
+			got_event = 1;
 			break;
 			
 		default:
@@ -366,10 +432,11 @@ static void EditFilesysVirtualLoop()
 #endif
 	}
 	
-	if (gotEvent)
+	if (got_event)
 	{
 		// Now we let the Gui object perform its logic.
 		uae_gui->logic();
+		SDL_RenderClear(sdl_renderer);
 		// Now we let the Gui object draw itself.
 		uae_gui->draw();
 		// Finally we update the screen.
@@ -393,33 +460,29 @@ bool EditFilesysVirtual(const int unit_no)
 	if (unit_no >= 0)
 	{
 		uci = &changed_prefs.mountconfig[unit_no];
-		const auto ci = &uci->ci;
 		get_filesys_unitconfig(&changed_prefs, unit_no, &mi);
-
-		strdevname.assign(ci->devname);
-		txtDevice->setText(strdevname);
-		strvolname.assign(ci->volname);
-		txtVolume->setText(strvolname);
-		strroot.assign(ci->rootdir);
-		txtPath->setText(strroot);
-		chkReadWrite->setSelected(!ci->readonly);
-		chkAutoboot->setSelected(ci->bootpri != BOOTPRI_NOAUTOBOOT);
-		snprintf(tmp, 32, "%d", ci->bootpri >= -127 ? ci->bootpri : -127);
-		txtBootPri->setText(tmp);
+		memcpy(&current_fsvdlg.ci, uci, sizeof(struct uaedev_config_info));
 	}
 	else
 	{
-		CreateDefaultDevicename(tmp);
-		txtDevice->setText(tmp);
-		txtVolume->setText(tmp);
-		strroot.assign(current_dir);
-		txtPath->setText(strroot);
-		chkReadWrite->setSelected(true);
-		txtBootPri->setText("0");
+		default_fsvdlg(&current_fsvdlg);
+		CreateDefaultDevicename(current_fsvdlg.ci.devname);
+		_tcscpy(current_fsvdlg.ci.volname, current_fsvdlg.ci.devname);
 	}
-
+	strdevname.assign(current_fsvdlg.ci.devname);
+	txtDevice->setText(strdevname);
+	strvolname.assign(current_fsvdlg.ci.volname);
+	txtVolume->setText(strvolname);
+	strroot.assign(current_fsvdlg.ci.rootdir);
+	txtPath->setText(strroot);
+	chkReadWrite->setSelected(!current_fsvdlg.ci.readonly);
+	chkAutoboot->setSelected(current_fsvdlg.ci.bootpri != BOOTPRI_NOAUTOBOOT);
+	snprintf(tmp, sizeof(tmp) - 1, "%d", current_fsvdlg.ci.bootpri >= -127 ? current_fsvdlg.ci.bootpri : -127);
+	txtBootPri->setText(tmp);
+	
 	// Prepare the screen once
 	uae_gui->logic();
+	SDL_RenderClear(sdl_renderer);
 	uae_gui->draw();
 	update_gui_screen();
 
@@ -427,23 +490,19 @@ bool EditFilesysVirtual(const int unit_no)
 	{
 		const auto start = SDL_GetPerformanceCounter();
 		EditFilesysVirtualLoop();
-		cap_fps(start, 60);
+		cap_fps(start);
 	}
 
 	if (dialogResult)
 	{
 		struct uaedev_config_info ci{};
-		const auto bp = tweakbootpri(atoi(txtBootPri->getText().c_str()), chkAutoboot->isSelected() ? 1 : 0, 0);
-		extract_path(const_cast<char *>(txtPath->getText().c_str()), current_dir);
+		
+		strncpy(current_fsvdlg.ci.devname, (char*)txtDevice->getText().c_str(), MAX_DPATH - 1);
+		strncpy(current_fsvdlg.ci.volname, (char*)txtVolume->getText().c_str(), MAX_DPATH - 1);
+		current_fsvdlg.ci.readonly = !chkReadWrite->isSelected();
+		current_fsvdlg.ci.bootpri = tweakbootpri(atoi(txtBootPri->getText().c_str()), chkAutoboot->isSelected() ? 1 : 0, 0);
 
-		uci_set_defaults(&ci, false);
-		strncpy(ci.devname, const_cast<char *>(txtDevice->getText().c_str()), MAX_DPATH);
-		strncpy(ci.volname, const_cast<char *>(txtVolume->getText().c_str()), MAX_DPATH);
-		strncpy(ci.rootdir, const_cast<char *>(txtPath->getText().c_str()), MAX_DPATH);
-		ci.type = UAEDEV_DIR;
-		ci.readonly = !chkReadWrite->isSelected();
-		ci.bootpri = bp;
-
+		memcpy(&ci, &current_fsvdlg.ci, sizeof(struct uaedev_config_info));
 		uci = add_filesys_config(&changed_prefs, unit_no, &ci);
 		if (uci)
 		{
@@ -452,6 +511,8 @@ bool EditFilesysVirtual(const int unit_no)
 			else if (uci->configoffset >= 0)
 				filesys_eject(uci->configoffset);
 		}
+
+		extract_path((char*)txtPath->getText().c_str(), current_dir);
 	}
 
 	ExitEditFilesysVirtual();

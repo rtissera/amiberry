@@ -113,7 +113,7 @@ typedef struct a_inode_struct {
 	struct virtualfilesysobject *vfso;
 } a_inode;
 
-//extern TCHAR *nname_begin (TCHAR *);
+extern TCHAR *nname_begin (TCHAR *);
 
 extern TCHAR *build_nname (const TCHAR *d, const TCHAR *n);
 extern TCHAR *build_aname (const TCHAR *d, const TCHAR *n);
@@ -126,11 +126,7 @@ extern int fsdb_used_as_nname (a_inode *base, const TCHAR *);
 extern a_inode *fsdb_lookup_aino_aname (a_inode *base, const TCHAR *);
 extern a_inode *fsdb_lookup_aino_nname (a_inode *base, const TCHAR *);
 extern int fsdb_exists (const TCHAR *nname);
-
-STATIC_INLINE int same_aname (const TCHAR *an1, const TCHAR *an2)
-{
-  return strcasecmp (an1, an2) == 0;
-}
+extern int same_aname(const char* an1, const char* an2);
 
 /* Filesystem-dependent functions.  */
 extern int fsdb_name_invalid (a_inode *, const TCHAR *n);
@@ -182,10 +178,6 @@ extern bool my_issamepath(const TCHAR *path1, const TCHAR *path2);
 extern bool my_createsoftlink(const TCHAR *path, const TCHAR *target);
 extern bool my_createshortcut(const TCHAR *source, const TCHAR *target, const TCHAR *description);
 
-extern a_inode *custom_fsdb_lookup_aino_aname (a_inode *base, const TCHAR *aname);
-extern a_inode *custom_fsdb_lookup_aino_nname (a_inode *base, const TCHAR *nname);
-extern int custom_fsdb_used_as_nname (a_inode *base, const TCHAR *nname);
-
 #define MYVOLUMEINFO_READONLY 1
 #define MYVOLUMEINFO_STREAMS 2
 #define MYVOLUMEINFO_ARCHIVE 4
@@ -193,5 +185,12 @@ extern int custom_fsdb_used_as_nname (a_inode *base, const TCHAR *nname);
 #define MYVOLUMEINFO_CDFS 16
 
 extern int my_getvolumeinfo (const TCHAR *root);
+
+#ifdef AMIBERRY
+char* fsdb_native_path(const char* root_dir, const char* amiga_path);
+void fsdb_get_file_time(a_inode* node, int* days, int* mins, int* ticks);
+int fsdb_set_file_time(a_inode* node, int days, int mins, int ticks);
+int host_errno_to_dos_errno(int err);
+#endif
 
 #endif /* UAE_FSDB_H */

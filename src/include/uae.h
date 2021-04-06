@@ -51,6 +51,7 @@ extern bool target_isrelativemode(void);
 extern uae_u32 getlocaltime (void);
 extern bool isguiactive(void);
 extern bool is_mainthread(void);
+extern void replace(std::string& str, const std::string& from, const std::string& to);
 
 extern int quit_program;
 extern bool console_emulation;
@@ -81,12 +82,15 @@ extern void get_configuration_path (TCHAR *out, int size);
 extern void fetch_luapath (TCHAR *out, int size);
 extern void get_screenshot_path (TCHAR *out, int size);
 extern void fetch_ripperpath (TCHAR *out, int size);
-extern void fetch_statefilepath (TCHAR *out, int size);
+extern void get_savestate_path(TCHAR *out, int size);
 extern void fetch_inputfilepath (TCHAR *out, int size);
 extern void get_data_path (TCHAR *out, int size);
 extern void get_rom_path (TCHAR *out, int size);
 //extern uae_u32 uaerand (void);
-#define uaerand() ((uae_u32)rand())
+STATIC_INLINE uae_u32 uaerand(void)
+{
+  return rand();
+}
 extern uae_u32 uaesrand (uae_u32 seed);
 extern uae_u32 uaerandgetseed (void);
 

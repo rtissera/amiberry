@@ -21,9 +21,13 @@
 #include "audio.h"
 #include "sounddep/sound.h"
 #include "savestate.h"
+#include "filesys.h"
 #include "blkdev.h"
 #include "memory.h"
 #include "amiberry_gfx.h"
+#include "disk.h"
+#include "xwin.h"
+#include "drawing.h"
 
 #ifdef AMIBERRY
 #include <linux/kd.h>
@@ -368,9 +372,24 @@ ConfigFileInfo* SearchConfigInList(const char* name)
 	return nullptr;
 }
 
-static void clearallkeys (void)
+void disk_selection(const int drive, uae_prefs* prefs)
 {
-	inputdevice_updateconfig (NULL, &changed_prefs);
+	char tmp[MAX_DPATH];
+
+	if (strlen(prefs->floppyslots[drive].df) > 0)
+		strncpy(tmp, prefs->floppyslots[drive].df, MAX_DPATH);
+	else
+		strncpy(tmp, current_dir, MAX_DPATH);
+	if (SelectFile("Select disk image file", tmp, diskfile_filter))
+	{
+		if (strncmp(prefs->floppyslots[drive].df, tmp, MAX_DPATH) != 0)
+		{
+			strncpy(prefs->floppyslots[drive].df, tmp, MAX_DPATH);
+			disk_insert(drive, tmp);
+			AddFileToDiskList(tmp, 1);
+			extract_path(tmp, current_dir);
+		}
+	}
 }
 
 static void prefs_to_gui()
@@ -378,7 +397,6 @@ static void prefs_to_gui()
 	/* filesys hack */
 	changed_prefs.mountitems = currprefs.mountitems;
 	memcpy(&changed_prefs.mountconfig, &currprefs.mountconfig, MOUNT_CONFIG_SIZE * sizeof(struct uaedev_config_info));
-	update_win_fs_mode(&currprefs);
 }
 
 static void gui_to_prefs(void)
@@ -390,7 +408,7 @@ static void gui_to_prefs(void)
 	currprefs.mountitems = changed_prefs.mountitems;
 	memcpy(&currprefs.mountconfig, &changed_prefs.mountconfig, MOUNT_CONFIG_SIZE * sizeof(struct uaedev_config_info));
 	fixup_prefs(&changed_prefs, true);
-	update_win_fs_mode(&changed_prefs);
+	update_win_fs_mode(0, &changed_prefs);
 }
 
 static void after_leave_gui()
@@ -498,42 +516,53 @@ int gui_update()
   return 0;
 }
 
+/* if drive is -1, show the full GUI, otherwise file-requester for DF[drive] */
 void gui_display(int shortcut)
 {
 	if (quit_program != 0)
 		return;
 	gui_active++;
-	emulating = 1;
-	pause_emulation = 1;
-	pause_sound();
-	blkdev_entergui();
 
-	if (lstAvailableROMs.empty())
-		RescanROMs();
+	if (setpaused(7)) {
+		inputdevice_unacquire();
+		wait_keyrelease();
+		clearallkeys();
+		setmouseactive(0, 0);
+	}
 
-	graphics_subshutdown();
+	if (shortcut == -1)
+	{
+		graphics_subshutdown();
 
-	prefs_to_gui();
-	run_gui();
-	gui_to_prefs();
+		prefs_to_gui();
+		run_gui();
+		gui_to_prefs();
 
-	black_screen_now();
+		clearscreen();
 
-	gui_update ();
-	gui_purge_events();
-	update_display(&changed_prefs);
+		gui_update();
+		gui_purge_events();
+	}
+	else if (shortcut >= 0 && shortcut < 4)
+	{
+		amiberry_gui_init();
+		gui_widgets_init();
+		disk_selection(shortcut, &changed_prefs);
+		gui_widgets_halt();
+		amiberry_gui_halt();
+	}
 	
 	reset_sound();
-	after_leave_gui();
+	inputdevice_copyconfig(&changed_prefs, &currprefs);
+	inputdevice_config_change_test();
 	clearallkeys ();
-	blkdev_exitgui();
-	resume_sound();
-
-	inputdevice_acquire (TRUE);
-	setmouseactive(1);
+	update_display(&changed_prefs);
+	if (resumepaused(7)) {
+		inputdevice_acquire(TRUE);
+		setmouseactive(0, 1);
+	}
 	
 	fpscounter_reset();
-	pause_emulation = 0;
 	gui_active--;
 }
 
@@ -672,14 +701,8 @@ void gui_message(const char* format, ...)
 	vsprintf(msg, format, parms);
 	va_end(parms);
 
-	if (!uae_gui)
-	{
-		// GUI screen is not initialized, output message to the console instead
-		printf("%s\n", msg);
-		return;
-	}
 	graphics_subshutdown();
-	InGameMessage(msg);
+	ShowMessage(_T(""), msg, _T(""), _T("Ok"), _T(""));
 }
 
 void notify_user(int msg)
@@ -807,29 +830,60 @@ int tweakbootpri(int bp, int ab, int dnm)
 	return bp;
 }
 
+struct fsvdlg_vals current_fsvdlg;
+struct hfdlg_vals current_hfdlg;
 
-bool hardfile_testrdb(const TCHAR* filename)
+void hardfile_testrdb (struct hfdlg_vals* hdf) 
 {
-	auto isrdb = false;
-	auto* f = zfile_fopen(filename, _T("rb"), ZFD_NORMAL);
-	uae_u8 tmp[8];
+	uae_u8 id[512];
+	struct hardfiledata hfd{};
 
-	if (!f)
-		return false;
-	for (auto i = 0; i < 16; i++)
-	{
-		zfile_fseek(f, i * 512, SEEK_SET);
-		memset(tmp, 0, sizeof tmp);
-		zfile_fread(tmp, 1, sizeof tmp, f);
-		if (!memcmp(tmp, "RDSK\0\0\0", 7) || !memcmp(tmp, "DRKS\0\0", 6) || (tmp[0] == 0x53 && tmp[1] == 0x10 && tmp[2] == 0x9b && tmp[3] == 0x13 && tmp[4] == 0 && tmp[5] == 0))
-		{
-			// RDSK or ADIDE "encoded" RDSK
-			isrdb = true;
-			break;
+	memset(id, 0, sizeof id);
+	memset(&hfd, 0, sizeof hfd);
+	hfd.ci.readonly = true;
+	hfd.ci.blocksize = 512;
+	if (hdf_open(&hfd, hdf->ci.rootdir) > 0) {
+		for (auto i = 0; i < 16; i++) {
+			hdf_read_rdb(&hfd, id, i * 512, 512);
+			auto babe = id[0] == 0xBA && id[1] == 0xBE; // A2090
+			if (!memcmp(id, "RDSK\0\0\0", 7) || !memcmp(id, "CDSK\0\0\0", 7) || !memcmp(id, "DRKS\0\0", 6) ||
+				(id[0] == 0x53 && id[1] == 0x10 && id[2] == 0x9b && id[3] == 0x13 && id[4] == 0 && id[5] == 0) || babe) {
+				// RDSK or ADIDE "encoded" RDSK
+				auto blocksize = 512;
+				if (!babe)
+					blocksize = (id[16] << 24) | (id[17] << 16) | (id[18] << 8) | (id[19] << 0);
+				hdf->ci.cyls = hdf->ci.highcyl = hdf->forcedcylinders = 0;
+				hdf->ci.sectors = 0;
+				hdf->ci.surfaces = 0;
+				hdf->ci.reserved = 0;
+				hdf->ci.bootpri = 0;
+				//hdf->ci.devname[0] = 0;
+				if (blocksize >= 512)
+					hdf->ci.blocksize = blocksize;
+				break;
+			}
 		}
+		hdf_close(&hfd);
 	}
-	zfile_fclose(f);
-	return isrdb;
+}
+
+void default_fsvdlg(struct fsvdlg_vals* f)
+{
+	memset(f, 0, sizeof(struct fsvdlg_vals));
+	f->ci.type = UAEDEV_DIR;
+}
+
+void default_hfdlg(struct hfdlg_vals* f)
+{
+	auto ctrl = f->ci.controller_type;
+	auto unit = f->ci.controller_unit;
+	memset(f, 0, sizeof(struct hfdlg_vals));
+	uci_set_defaults(&f->ci, false);
+	f->original = true;
+	f->ci.type = UAEDEV_HDF;
+	f->ci.controller_type = ctrl;
+	f->ci.controller_unit = unit;
+	f->ci.unit_feature_level = 1;
 }
 
 bool isguiactive(void)

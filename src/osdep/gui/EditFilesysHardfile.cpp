@@ -1,6 +1,5 @@
-#include <stdbool.h>
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 
 #include <guisan.hpp>
 #include <SDL_ttf.h>
@@ -15,18 +14,17 @@
 #include "autoconf.h"
 #include "filesys.h"
 #include "gui_handling.h"
-
-#include "inputdevice.h"
 #include "amiberry_gfx.h"
+#include "amiberry_input.h"
 
 #ifdef ANDROID
 #include "androidsdl_event.h"
 #endif
 
 #define DIALOG_WIDTH 620
-#define DIALOG_HEIGHT 272
+#define DIALOG_HEIGHT 280
 
-static const char *harddisk_filter[] = {".hdf", "\0"};
+static const char *harddisk_filter[] = {".hdf", ".hdz", ".lha", "zip", ".vhd", "\0"};
 
 struct controller_map
 {
@@ -67,20 +65,107 @@ static gcn::Label *lblController;
 static gcn::DropDown *cboController;
 static gcn::DropDown *cboUnit;
 
-static void check_rdb(const TCHAR *filename)
+static void sethd(void)
 {
-	const auto isrdb = hardfile_testrdb(filename);
-	if (isrdb)
-	{
-		txtSectors->setText("0");
-		txtSurfaces->setText("0");
-		txtReserved->setText("0");
-		txtBootPri->setText("0");
+	bool rdb = is_hdf_rdb();
+	bool enablegeo = !rdb;
+	txtSectors->setEnabled(enablegeo);
+	txtSurfaces->setEnabled(enablegeo);
+	txtReserved->setEnabled(enablegeo);
+	txtBlocksize->setEnabled(enablegeo);
+}
+
+static void sethardfile(void)
+{
+	std::string strdevname, strroot;
+	char tmp[32];
+	auto ide = current_hfdlg.ci.controller_type >= HD_CONTROLLER_TYPE_IDE_FIRST && current_hfdlg.ci.controller_type <= HD_CONTROLLER_TYPE_IDE_LAST;
+	auto rdb = is_hdf_rdb();
+	auto disables = !rdb || (rdb && current_hfdlg.ci.controller_type == HD_CONTROLLER_TYPE_UAE);
+
+	sethd();
+	if (!disables)
+		current_hfdlg.ci.bootpri = 0;
+	strroot.assign(current_hfdlg.ci.rootdir);
+	txtPath->setText(strroot);
+	strdevname.assign(current_hfdlg.ci.devname);
+	txtDevice->setText(strdevname);
+	snprintf(tmp, sizeof(tmp) - 1, "%d", rdb ? current_hfdlg.ci.psecs : current_hfdlg.ci.sectors);
+	txtSectors->setText(tmp);
+	snprintf(tmp, sizeof(tmp) - 1, "%d", rdb ? current_hfdlg.ci.pheads : current_hfdlg.ci.surfaces);
+	txtSurfaces->setText(tmp);
+	snprintf(tmp, sizeof(tmp) - 1, "%d", rdb ? current_hfdlg.ci.pcyls : current_hfdlg.ci.reserved);
+	txtReserved->setText(tmp);
+	snprintf(tmp, sizeof(tmp) - 1, "%d", current_hfdlg.ci.blocksize);
+	txtBlocksize->setText(tmp);
+	snprintf(tmp, sizeof(tmp) - 1, "%d", current_hfdlg.ci.bootpri);
+	txtBootPri->setText(tmp);
+	chkReadWrite->setSelected(!current_hfdlg.ci.readonly);
+	chkAutoboot->setSelected(ISAUTOBOOT(&current_hfdlg.ci));
+	chkAutoboot->setEnabled(disables);
+
+	auto selIndex = 0;
+	for (auto i = 0; i < 2; ++i) {
+		if (controller[i].type == current_hfdlg.ci.controller_type)
+			selIndex = i;
 	}
-	txtSectors->setEnabled(!isrdb);
-	txtSurfaces->setEnabled(!isrdb);
-	txtReserved->setEnabled(!isrdb);
-	txtBootPri->setEnabled(!isrdb);
+	cboController->setSelected(selIndex);
+	cboUnit->setSelected(current_hfdlg.ci.controller_unit);
+}
+
+void updatehdfinfo(bool force, bool defaults)
+{
+	uae_u8 id[512] = { 0 };
+	uae_u32 i;
+
+	uae_u64 bsize = 0;
+	if (force) {
+		auto gotrdb = false;
+		auto blocksize = 512;
+		struct hardfiledata hfd{};
+		memset(id, 0, sizeof id);
+		memset(&hfd, 0, sizeof hfd);
+		hfd.ci.readonly = true;
+		hfd.ci.blocksize = blocksize;
+		current_hfdlg.size = 0;
+		current_hfdlg.dostype = 0;
+		if (hdf_open(&hfd, current_hfdlg.ci.rootdir) > 0) {
+			for (i = 0; i < 16; i++) {
+				hdf_read(&hfd, id, i * 512, 512);
+				bsize = hfd.virtsize;
+				current_hfdlg.size = hfd.virtsize;
+				if (!memcmp(id, "RDSK", 4) || !memcmp(id, "CDSK", 4)) {
+					blocksize = (id[16] << 24) | (id[17] << 16) | (id[18] << 8) | (id[19] << 0);
+					gotrdb = true;
+					break;
+				}
+			}
+			if (i == 16) {
+				hdf_read(&hfd, id, 0, 512);
+				current_hfdlg.dostype = (id[0] << 24) | (id[1] << 16) | (id[2] << 8) | (id[3] << 0);
+			}
+		}
+		if (defaults) {
+			if (blocksize > 512) {
+				hfd.ci.blocksize = blocksize;
+			}
+		}
+		if (current_hfdlg.ci.controller_type >= HD_CONTROLLER_TYPE_IDE_FIRST && current_hfdlg.ci.controller_type <= HD_CONTROLLER_TYPE_IDE_LAST) {
+			getchspgeometry(bsize, &current_hfdlg.ci.pcyls, &current_hfdlg.ci.pheads, &current_hfdlg.ci.psecs, true);
+		}
+		else {
+			getchspgeometry(bsize, &current_hfdlg.ci.pcyls, &current_hfdlg.ci.pheads, &current_hfdlg.ci.psecs, false);
+		}
+		if (defaults && !gotrdb) {
+			gethdfgeometry(bsize, &current_hfdlg.ci);
+		}
+		hdf_close(&hfd);
+	}
+
+	if (current_hfdlg.ci.controller_type >= HD_CONTROLLER_TYPE_IDE_FIRST && current_hfdlg.ci.controller_type <= HD_CONTROLLER_TYPE_IDE_LAST) {
+		if (current_hfdlg.ci.unit_feature_level == HD_LEVEL_ATA_1 && bsize >= 4 * (uae_u64)0x40000000)
+			current_hfdlg.ci.unit_feature_level = HD_LEVEL_ATA_2;
+	}
 }
 
 class ControllerListModel : public gcn::ListModel
@@ -140,7 +225,17 @@ public:
 			{
 				txtPath->setText(tmp);
 				fileSelected = true;
-				check_rdb(tmp);
+				default_hfdlg(&current_hfdlg);
+				CreateDefaultDevicename(current_hfdlg.ci.devname);
+				_tcscpy(current_hfdlg.ci.rootdir, tmp);
+				// Set RDB mode if IDE or SCSI
+				if (current_hfdlg.ci.controller_type > 0) {
+					current_hfdlg.ci.sectors = current_hfdlg.ci.reserved = current_hfdlg.ci.surfaces = 0;
+				}
+				hardfile_testrdb(&current_hfdlg);
+				updatehdfinfo(true, true);
+				updatehdfinfo(false, false);
+				sethardfile();
 			}
 			wndEditFilesysHardfile->requestModalFocus();
 			cmdPath->requestFocus();
@@ -157,6 +252,28 @@ public:
 				cboUnit->setEnabled(true);
 				break;
 			}
+			current_hfdlg.ci.controller_type = controller[cboController->getSelected()].type;
+			sethardfile();
+
+		}
+		else if (actionEvent.getSource() == cboUnit) {
+			current_hfdlg.ci.controller_unit = cboUnit->getSelected();
+
+		}
+		else if (actionEvent.getSource() == chkReadWrite) {
+			current_hfdlg.ci.readonly = !chkReadWrite->isSelected();
+
+		}
+		else if (actionEvent.getSource() == chkAutoboot) {
+			char tmp[32];
+			if (chkAutoboot->isSelected()) {
+				current_hfdlg.ci.bootpri = 0;
+			}
+			else {
+				current_hfdlg.ci.bootpri = BOOTPRI_NOAUTOBOOT;
+			}
+			snprintf(tmp, sizeof(tmp) - 1, "%d", current_hfdlg.ci.bootpri);
+			txtBootPri->setText(tmp);
 		}
 		else
 		{
@@ -181,11 +298,72 @@ public:
 
 static FilesysHardfileActionListener *filesysHardfileActionListener;
 
+class FilesysHardfileFocusListener : public gcn::FocusListener
+{
+public:
+	void focusGained(const gcn::Event& event)
+	{
+	}
+
+	void focusLost(const gcn::Event& event)
+	{
+		int v;
+		int* p;
+		if (event.getSource() == txtDevice) {
+			strncpy(current_hfdlg.ci.devname, (char*)txtDevice->getText().c_str(), MAX_DPATH - 1);
+
+		}
+		else if (event.getSource() == txtBootPri) {
+			current_hfdlg.ci.bootpri = atoi(txtBootPri->getText().c_str());
+			if (current_hfdlg.ci.bootpri < -127)
+				current_hfdlg.ci.bootpri = -127;
+			if (current_hfdlg.ci.bootpri > 127)
+				current_hfdlg.ci.bootpri = 127;
+
+		}
+		else if (event.getSource() == txtSurfaces) {
+			p = &current_hfdlg.ci.surfaces;
+			v = *p;
+			*p = atoi(txtSurfaces->getText().c_str());
+			if (v != *p) {
+				updatehdfinfo(true, false);
+			}
+
+		}
+		else if (event.getSource() == txtReserved) {
+			p = &current_hfdlg.ci.reserved;
+			v = *p;
+			*p = atoi(txtReserved->getText().c_str());
+			if (v != *p) {
+				updatehdfinfo(true, false);
+			}
+
+		}
+		else if (event.getSource() == txtSectors) {
+			p = &current_hfdlg.ci.sectors;
+			v = *p;
+			*p = atoi(txtSectors->getText().c_str());
+			if (v != *p) {
+				updatehdfinfo(true, false);
+			}
+
+		}
+		else if (event.getSource() == txtBlocksize) {
+			v = current_hfdlg.ci.blocksize;
+			current_hfdlg.ci.blocksize = atoi(txtBlocksize->getText().c_str());
+			if (v != current_hfdlg.ci.blocksize)
+				updatehdfinfo(true, false);
+		}
+	}
+};
+static FilesysHardfileFocusListener* filesysHardfileFocusListener;
+
+
 static void InitEditFilesysHardfile()
 {
 	for (auto i = 0; expansionroms[i].name; i++)
 	{
-		const auto erc = &expansionroms[i];
+		const auto* const erc = &expansionroms[i];
 		if (erc->deviceflags & EXPANSIONTYPE_IDE)
 		{
 			for (auto j = 0; controller[j].type >= 0; ++j)
@@ -207,6 +385,7 @@ static void InitEditFilesysHardfile()
 	wndEditFilesysHardfile->setTitleBarHeight(TITLEBAR_HEIGHT);
 
 	filesysHardfileActionListener = new FilesysHardfileActionListener();
+	filesysHardfileFocusListener = new FilesysHardfileFocusListener();
 
 	cmdOK = new gcn::Button("Ok");
 	cmdOK->setSize(BUTTON_WIDTH, BUTTON_HEIGHT);
@@ -229,37 +408,53 @@ static void InitEditFilesysHardfile()
 	txtDevice = new gcn::TextField();
 	txtDevice->setSize(60, TEXTFIELD_HEIGHT);
 
+	txtDevice->addFocusListener(filesysHardfileFocusListener);
+
 	chkReadWrite = new gcn::CheckBox("Read/Write", true);
 	chkReadWrite->setId("hdfRW");
 
+	chkReadWrite->addActionListener(filesysHardfileActionListener);
+
 	chkAutoboot = new gcn::CheckBox("Bootable", true);
 	chkAutoboot->setId("hdfAutoboot");
+
+	chkAutoboot->addActionListener(filesysHardfileActionListener);
 
 	lblBootPri = new gcn::Label("Boot priority:");
 	lblBootPri->setAlignment(gcn::Graphics::RIGHT);
 	txtBootPri = new gcn::TextField();
 	txtBootPri->setSize(40, TEXTFIELD_HEIGHT);
 
+	txtBootPri->addFocusListener(filesysHardfileFocusListener);
+	
 	lblSurfaces = new gcn::Label("Surfaces:");
 	lblSurfaces->setAlignment(gcn::Graphics::RIGHT);
 	txtSurfaces = new gcn::TextField();
 	txtSurfaces->setSize(40, TEXTFIELD_HEIGHT);
 
+	txtSurfaces->addFocusListener(filesysHardfileFocusListener);
+	
 	lblReserved = new gcn::Label("Reserved:");
 	lblReserved->setAlignment(gcn::Graphics::RIGHT);
 	txtReserved = new gcn::TextField();
 	txtReserved->setSize(40, TEXTFIELD_HEIGHT);
 
+	txtReserved->addFocusListener(filesysHardfileFocusListener);
+	
 	lblSectors = new gcn::Label("Sectors:");
 	lblSectors->setAlignment(gcn::Graphics::RIGHT);
 	txtSectors = new gcn::TextField();
 	txtSectors->setSize(40, TEXTFIELD_HEIGHT);
 
+	txtSectors->addFocusListener(filesysHardfileFocusListener);
+	
 	lblBlocksize = new gcn::Label("Blocksize:");
 	lblBlocksize->setAlignment(gcn::Graphics::RIGHT);
 	txtBlocksize = new gcn::TextField();
 	txtBlocksize->setSize(40, TEXTFIELD_HEIGHT);
 
+	txtBlocksize->addFocusListener(filesysHardfileFocusListener);
+	
 	lblPath = new gcn::Label("Path:");
 	lblPath->setAlignment(gcn::Graphics::RIGHT);
 	txtPath = new gcn::TextField();
@@ -284,6 +479,8 @@ static void InitEditFilesysHardfile()
 	cboUnit->setBaseColor(gui_baseCol);
 	cboUnit->setId("hdfUnit");
 
+	cboUnit->addActionListener(filesysHardfileActionListener);
+	
 	int posY = DISTANCE_BORDER;
 	int posX = DISTANCE_BORDER;
 
@@ -363,6 +560,7 @@ static void ExitEditFilesysHardfile()
 	delete cmdOK;
 	delete cmdCancel;
 	delete filesysHardfileActionListener;
+	delete filesysHardfileFocusListener;
 
 	delete wndEditFilesysHardfile;
 }
@@ -371,15 +569,19 @@ static void EditFilesysHardfileLoop()
 {
 	//FocusBugWorkaround(wndEditFilesysHardfile);
 
-	int gotEvent = 0;
+	char lastActiveWidget[128];
+	strcpy(lastActiveWidget, "");
+	
+	int got_event = 0;
 	SDL_Event event;
 	SDL_Event touch_event;
+	struct didata* did = &di_joystick[0];
 	while (SDL_PollEvent(&event))
 	{
 		switch (event.type)
 		{
 		case SDL_KEYDOWN:
-			gotEvent = 1;
+			got_event = 1;
 			switch (event.key.keysym.sym)
 			{
 			case VK_ESCAPE:
@@ -419,47 +621,48 @@ static void EditFilesysHardfileLoop()
 
 		case SDL_JOYBUTTONDOWN:
 		case SDL_JOYHATMOTION:
-		case SDL_JOYAXISMOTION:
 			if (gui_joystick)
 			{
-				gotEvent = 1;
+				got_event = 1;
 				const int hat = SDL_JoystickGetHat(gui_joystick, 0);
-
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_up) || (hat & SDL_HAT_UP) || SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_y) == -32768) // dpad
+				
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_UP]) || hat & SDL_HAT_UP)
 				{
 					if (HandleNavigation(DIRECTION_UP))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_UP);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_down) || (hat & SDL_HAT_DOWN) || SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_y) == 32767) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_DOWN]) || hat & SDL_HAT_DOWN)
 				{
 					if (HandleNavigation(DIRECTION_DOWN))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_DOWN);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_right) || (hat & SDL_HAT_RIGHT) || SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_x) == 32767) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_RIGHT]) || hat & SDL_HAT_RIGHT)
 				{
 					if (HandleNavigation(DIRECTION_RIGHT))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_RIGHT);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_left) || (hat & SDL_HAT_LEFT) || SDL_JoystickGetAxis(gui_joystick, host_input_buttons[0].lstick_axis_x) == -32768) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_LEFT]) || hat & SDL_HAT_LEFT)
 				{
 					if (HandleNavigation(DIRECTION_LEFT))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_LEFT);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].south_button)) // need this to be X button
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_A]) ||
+					SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_B]))
 				{
 					PushFakeKey(SDLK_RETURN);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].east_button) ||
-					SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].start_button)) // need this to be START button
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_X]) ||
+					SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_Y]) ||
+					SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_START]))
 				{
 					dialogFinished = true;
 					break;
@@ -467,8 +670,57 @@ static void EditFilesysHardfileLoop()
 			}
 			break;
 
+		case SDL_JOYAXISMOTION:
+			if (gui_joystick)
+			{
+				got_event = 1;
+				if (event.jaxis.axis == SDL_CONTROLLER_AXIS_LEFTX)
+				{
+					if (event.jaxis.value > joystick_dead_zone && last_x != 1)
+					{
+						last_x = 1;
+						if (HandleNavigation(DIRECTION_RIGHT))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_RIGHT);
+						break;
+					}
+					if (event.jaxis.value < -joystick_dead_zone && last_x != -1)
+					{
+						last_x = -1;
+						if (HandleNavigation(DIRECTION_LEFT))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_LEFT);
+						break;
+					}
+					if (event.jaxis.value > -joystick_dead_zone && event.jaxis.value < joystick_dead_zone)
+						last_x = 0;
+				}
+				else if (event.jaxis.axis == SDL_CONTROLLER_AXIS_LEFTY)
+				{
+					if (event.jaxis.value < -joystick_dead_zone && last_y != -1)
+					{
+						last_y = -1;
+						if (HandleNavigation(DIRECTION_UP))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_UP);
+						break;
+					}
+					if (event.jaxis.value > joystick_dead_zone && last_y != 1)
+					{
+						last_y = 1;
+						if (HandleNavigation(DIRECTION_DOWN))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_DOWN);
+						break;
+					}
+					if (event.jaxis.value > -joystick_dead_zone && event.jaxis.value < joystick_dead_zone)
+						last_y = 0;
+				}
+			}
+			break;
+			
 		case SDL_FINGERDOWN:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &event, sizeof event);
 			touch_event.type = SDL_MOUSEBUTTONDOWN;
 			touch_event.button.which = 0;
@@ -480,7 +732,7 @@ static void EditFilesysHardfileLoop()
 			break;
 
 		case SDL_FINGERUP:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &event, sizeof event);
 			touch_event.type = SDL_MOUSEBUTTONUP;
 			touch_event.button.which = 0;
@@ -492,7 +744,7 @@ static void EditFilesysHardfileLoop()
 			break;
 
 		case SDL_FINGERMOTION:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &event, sizeof event);
 			touch_event.type = SDL_MOUSEMOTION;
 			touch_event.motion.which = 0;
@@ -508,7 +760,7 @@ static void EditFilesysHardfileLoop()
 		case SDL_MOUSEBUTTONUP:
 		case SDL_MOUSEMOTION:
 		case SDL_MOUSEWHEEL:
-			gotEvent = 1;
+			got_event = 1;
 			break;
 			
 		default:
@@ -525,10 +777,11 @@ static void EditFilesysHardfileLoop()
 #endif
 	}
 
-	if (gotEvent)
+	if (got_event)
 	{
 		// Now we let the Gui object perform its logic.
 		uae_gui->logic();
+		SDL_RenderClear(sdl_renderer);
 		// Now we let the Gui object draw itself.
 		uae_gui->draw();
 		// Finally we update the screen.
@@ -553,58 +806,25 @@ bool EditFilesysHardfile(const int unit_no)
 	if (unit_no >= 0)
 	{
 		uci = &changed_prefs.mountconfig[unit_no];
-		const auto ci = &uci->ci;
 		get_filesys_unitconfig(&changed_prefs, unit_no, &mi);
 
-		strdevname.assign(ci->devname);
-		txtDevice->setText(strdevname);
-		strroot.assign(ci->rootdir);
-		txtPath->setText(strroot);
+		current_hfdlg.forcedcylinders = uci->ci.highcyl;
+		memcpy(&current_hfdlg.ci, uci, sizeof(struct uaedev_config_info));
 		fileSelected = true;
-
-		chkReadWrite->setSelected(!ci->readonly);
-		chkAutoboot->setSelected(ci->bootpri != BOOTPRI_NOAUTOBOOT);
-		snprintf(tmp, sizeof tmp, "%d", ci->bootpri >= -127 ? ci->bootpri : -127);
-		txtBootPri->setText(tmp);
-		snprintf(tmp, sizeof tmp, "%d", ci->surfaces);
-		txtSurfaces->setText(tmp);
-		snprintf(tmp, sizeof tmp, "%d", ci->reserved);
-		txtReserved->setText(tmp);
-		snprintf(tmp, sizeof tmp, "%d", ci->sectors);
-		txtSectors->setText(tmp);
-		snprintf(tmp, sizeof tmp, "%d", ci->blocksize);
-		txtBlocksize->setText(tmp);
-		auto selIndex = 0;
-		for (auto i = 0; i < 2; ++i)
-		{
-			if (controller[i].type == ci->controller_type)
-				selIndex = i;
-		}
-		cboController->setSelected(selIndex);
-		cboUnit->setSelected(ci->controller_unit);
-
-		check_rdb(strroot.c_str());
 	}
 	else
 	{
-		CreateDefaultDevicename(tmp);
-		txtDevice->setText(tmp);
-		strroot.assign(current_dir);
-		txtPath->setText(strroot);
+		default_hfdlg(&current_hfdlg);
+		CreateDefaultDevicename(current_hfdlg.ci.devname);
 		fileSelected = false;
-
-		chkReadWrite->setSelected(true);
-		txtBootPri->setText("0");
-		txtSurfaces->setText("1");
-		txtReserved->setText("2");
-		txtSectors->setText("32");
-		txtBlocksize->setText("512");
-		cboController->setSelected(0);
-		cboUnit->setSelected(0);
 	}
 
+	updatehdfinfo(true, false);
+	sethardfile();
+	
 	// Prepare the screen once
 	uae_gui->logic();
+	SDL_RenderClear(sdl_renderer);
 	uae_gui->draw();
 	update_gui_screen();
 
@@ -612,37 +832,17 @@ bool EditFilesysHardfile(const int unit_no)
 	{
 		const auto start = SDL_GetPerformanceCounter();
 		EditFilesysHardfileLoop();
-		cap_fps(start, 60);
+		cap_fps(start);
 	}
 
 	if (dialogResult)
 	{
-		struct uaedev_config_info ci
-		{
-		};
-		const auto bp = tweakbootpri(atoi(txtBootPri->getText().c_str()), chkAutoboot->isSelected() ? 1 : 0, 0);
 		extract_path(const_cast<char *>(txtPath->getText().c_str()), current_dir);
 
-		uci_set_defaults(&ci, false);
-		strncpy(ci.devname, const_cast<char *>(txtDevice->getText().c_str()), MAX_DPATH);
-		strncpy(ci.rootdir, const_cast<char *>(txtPath->getText().c_str()), MAX_DPATH);
-		ci.type = UAEDEV_HDF;
-		ci.controller_type = controller[cboController->getSelected()].type;
-		ci.controller_type_unit = 0;
-		ci.controller_unit = cboUnit->getSelected();
-		ci.unit_feature_level = 1;
-		ci.unit_special_flags = 0;
-		ci.readonly = !chkReadWrite->isSelected();
-		ci.sectors = atoi(txtSectors->getText().c_str());
-		ci.surfaces = atoi(txtSurfaces->getText().c_str());
-		ci.reserved = atoi(txtReserved->getText().c_str());
-		ci.blocksize = atoi(txtBlocksize->getText().c_str());
-		ci.bootpri = bp;
-		ci.physical_geometry = hardfile_testrdb(ci.rootdir);
-
+		struct uaedev_config_info ci{};
+		memcpy(&ci, &current_hfdlg.ci, sizeof(struct uaedev_config_info));
 		uci = add_filesys_config(&changed_prefs, unit_no, &ci);
-		if (uci)
-		{
+		if (uci) {
 			auto* const hfd = get_hardfile_data(uci->configoffset);
 			if (hfd)
 				hardfile_media_change(hfd, &ci, true, false);

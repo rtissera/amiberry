@@ -8,63 +8,9 @@
 #ifndef __PICASSO96_H__
 #define __PICASSO96_H__
 
-#include "uae/types.h"
-#include "traps.h"
-#include "rtgmodes.h"
-
-void picasso96_alloc (TrapContext* ctx);
-uae_u32 picasso_demux (uae_u32 arg, TrapContext *ctx);
-
-struct ScreenResolution
-{
-    uae_u32 width;  /* in pixels */
-    uae_u32 height; /* in pixels */
-};
-
-#define MAX_PICASSO_MODES 100
-#define MAX_REFRESH_RATES 10
-
-#define REFRESH_RATE_RAW 1
-#define REFRESH_RATE_LACE 2
-
-struct PicassoResolution
-{
-	struct ScreenResolution res;
-	int depth;   /* depth in bytes-per-pixel */
-	int residx;
-	int refresh[MAX_REFRESH_RATES]; /* refresh-rates in Hz */
-	int refreshtype[MAX_REFRESH_RATES]; /* 0=normal,1=raw,2=lace */
-	TCHAR name[25];
-	/* Bit mask of RGBFF_xxx values.  */
-	uae_u32 colormodes;
-	int rawmode;
-	bool lace; // all modes lace
-};
-extern struct PicassoResolution *DisplayModes;
-
-typedef struct _RECT
-{
-  uae_s32 left;
-  uae_s32 top;
-  uae_s32 right;
-  uae_s32 bottom;
-} RECT;
-
-#define MAX_DISPLAYS 1
-struct MultiDisplay {
-    int primary;
-	TCHAR* adaptername, * adapterid, * adapterkey;
-	TCHAR* monitorname, * monitorid;
-	TCHAR* fullname;
-    struct PicassoResolution *DisplayModes;
-    RECT rect;
-};
-extern struct MultiDisplay Displays[MAX_DISPLAYS];
-
-extern int GetSurfacePixelFormat(void);
-extern void picasso_init_resolutions (void);
-
 #ifdef PICASSO96
+
+#include "amiberry_gfx.h"
 
 #define NOSIGNAL 0xFFFFFFFF
 
@@ -522,8 +468,8 @@ enum {
 #define PSSO_BoardInfo_Reserved0		    PSSO_BoardInfo_BlitPlanar2DirectDefault + 4
 #define PSSO_BoardInfo_Reserved0Default		    PSSO_BoardInfo_Reserved0 + 4
 #define PSSO_BoardInfo_Reserved1		    PSSO_BoardInfo_Reserved0Default + 4
-#define PSSO_BoardInfo_Reserved1Default		    PSSO_BoardInfo_Reserved1 + 4
-#define PSSO_BoardInfo_Reserved2		    PSSO_BoardInfo_Reserved1Default + 4
+#define PSSO_SetSplitPosition		    PSSO_BoardInfo_Reserved1 + 4
+#define PSSO_BoardInfo_Reserved2		    PSSO_SetSplitPosition + 4
 #define PSSO_BoardInfo_Reserved2Default		    PSSO_BoardInfo_Reserved2 + 4
 #define PSSO_BoardInfo_Reserved3		    PSSO_BoardInfo_Reserved2Default + 4
 #define PSSO_BoardInfo_Reserved3Default		    PSSO_BoardInfo_Reserved3 + 4
@@ -596,6 +542,8 @@ enum {
 #define BIB_NEEDSALIGNMENT		 2	/* bitmaps have to be aligned (not yet supported!) */
 #define BIB_CACHEMODECHANGE		 3	/* board memory may be set to Imprecise (060) or Nonserialised (040) */
 #define BIB_VBLANKINTERRUPT		 4	/* board can cause a hardware interrupt on a vertical retrace */
+#define BIB_HASSPRITEBUFFER      5  /* board has allocated memory for software sprite image and save buffer */
+#define BIB_VGASCREENSPLIT       6  /* has a screen B with fixed screen position for split-screens */
 #define BIB_DBLSCANDBLSPRITEY	 8	/* hardware sprite y position is doubled on doublescan display modes */
 #define BIB_ILACEHALFSPRITEY	 9	/* hardware sprite y position is halved on interlace display modes */
 #define BIB_ILACEDBLROWOFFSET	10	/* doubled row offset in interlaced display modes needs additional horizontal bit */
@@ -623,6 +571,8 @@ enum {
 #define BIF_NEEDSALIGNMENT		(1 << BIB_NEEDSALIGNMENT)
 #define BIF_CACHEMODECHANGE		(1 << BIB_CACHEMODECHANGE)
 #define BIF_VBLANKINTERRUPT		(1 << BIB_VBLANKINTERRUPT)
+#define BIF_HASSPRITEBUFFER		(1 << BIB_HASSPRITEBUFFER)
+#define BIF_VGASCREENSPLIT		(1 << BIB_VGASCREENSPLIT)
 #define BIF_DBLSCANDBLSPRITEY	(1 << BIB_DBLSCANDBLSPRITEY)
 #define BIF_ILACEHALFSPRITEY	(1 << BIB_ILACEHALFSPRITEY)
 #define BIF_ILACEDBLROWOFFSET	(1 << BIB_ILACEDBLROWOFFSET)
@@ -649,7 +599,7 @@ enum {
 struct picasso96_state_struct
 {
     RGBFTYPE            RGBFormat;   /* true-colour, CLUT, hi-colour, etc.*/
-    struct MyCLUTEntry  CLUT[256];   /* Duh! */
+    struct MyCLUTEntry  CLUT[2 * 256];   /* Duh! */
     uaecptr             Address;     /* Active screen address (Amiga-side)*/
     uaecptr             Extent;      /* End address of screen (Amiga-side)*/
     uae_u16             Width;       /* Active display width  (From SetGC)*/
@@ -675,25 +625,23 @@ struct picasso96_state_struct
     long		XYOffset;
 };
 
-extern void InitPicasso96 (void);
+extern void InitPicasso96 (int monid);
 
-extern bool picasso_rendered;
+extern struct picasso96_state_struct picasso96_state[MAX_AMIGAMONITORS];
 
-extern struct picasso96_state_struct picasso96_state;
-
-extern void picasso_enablescreen(int on);
-extern void picasso_refresh();
-extern void init_hz_p96();
+extern void picasso_enablescreen(int monid, int on);
+extern void picasso_refresh(int monid);
+extern void init_hz_p96(int monid);
 extern void picasso_handle_vsync(void);
-//extern void picasso_trigger_vblank(void);
-extern bool picasso_is_active();
-extern int picasso_setwincursor();
+extern void picasso_trigger_vblank(void);
+extern bool picasso_is_active(int monid);
+extern int picasso_setwincursor(int monid);
 extern int picasso_palette(struct MyCLUTEntry* MCLUT, uae_u32* clut);
 extern void picasso_allocatewritewatch(int index, int gfxmemsize);
 extern void picasso_getwritewatch(int index, int offset);
 extern bool picasso_is_vram_dirty(int index, uaecptr addr, int size);
-extern void picasso_statusline(uae_u8* dst);
-extern void picasso_invalidate(int x, int y, int w, int h);
+extern void picasso_statusline(int monid, uae_u8* dst);
+extern void picasso_invalidate(int monid, int x, int y, int w, int h);
 
 /* This structure describes the UAE-side framebuffer for the Picasso
  * screen.  */
@@ -703,7 +651,7 @@ struct picasso_vidbuf_description {
     int extra_mem; /* nonzero if there's a second buffer that must be updated */
     uae_u32 rgbformat;
     RGBFTYPE selected_rgbformat;
-    uae_u32 clut[256];
+    uae_u32 clut[256 * 2];
 	int picasso_convert, host_mode;
 	int ohost_mode, orgbformat;
 	int full_refresh;
@@ -711,16 +659,23 @@ struct picasso_vidbuf_description {
 	int rtg_clear_flag;
 	bool picasso_active;
 	bool picasso_changed;
+	uae_s16 splitypos;
 	uae_atomic picasso_state_change;
 };
 
-extern struct picasso_vidbuf_description picasso_vidinfo;
+extern struct picasso_vidbuf_description picasso_vidinfo[MAX_AMIGAMONITORS];
 
-extern void gfx_set_picasso_modeinfo (uae_u32 w, uae_u32 h, uae_u32 d, RGBFTYPE rgbfmt);
-extern void gfx_set_picasso_colors(RGBFTYPE rgbfmt);
-extern void gfx_set_picasso_state (int on);
-extern uae_u8 *gfx_lock_picasso (bool, bool);
-extern void gfx_unlock_picasso (bool);
+extern void gfx_set_picasso_modeinfo(int monid, uae_u32 w, uae_u32 h, uae_u32 d, RGBFTYPE rgbfmt);
+extern void gfx_set_picasso_colors(int monid, RGBFTYPE rgbfmt);
+extern void gfx_set_picasso_state(int monid, int on);
+extern uae_u8* gfx_lock_picasso(int monid, bool, bool);
+extern void gfx_unlock_picasso(int monid, bool);
+extern int createwindowscursor(int monid, uaecptr src, int w, int h, int hiressprite, int doubledsprite, int chipset);
+
+void lockrtg(void);
+void unlockrtg(void);
+
+void fb_copyrow(int monid, uae_u8* src, uae_u8* dst, int x, int y, int width, int srcpixbytes, int dy);
 
 extern int p96refresh_active;
 
@@ -759,5 +714,8 @@ extern int p96refresh_active;
 #endif
 
 #endif
+
+void picasso96_alloc(TrapContext* ctx);
+uae_u32 picasso_demux(uae_u32 arg, TrapContext* ctx);
 
 #endif /* __PICASSO96_H__ */

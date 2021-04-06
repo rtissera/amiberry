@@ -27,6 +27,8 @@
 #define MAXVPOS_LINES_OCS 512
 #define HPOS_SHIFT 3
 
+#define BLIT_NASTY_CPU_STEAL_CYCLE_COUNT 4
+
 uae_u32 get_copper_address (int copno);
 
 extern int custom_init (void);
@@ -36,9 +38,12 @@ extern int intlev (void);
 extern void dumpcustom (void);
 
 extern void do_copper (void);
+#ifdef AMIBERRY
+extern void check_copperlist_write(uaecptr addr);
+#endif
 
 extern void notice_new_xcolors (void);
-extern void notice_screen_contents_lost();
+extern void notice_screen_contents_lost(int monid);
 extern void init_row_map (void);
 extern void init_hz_normal (void);
 extern void init_custom (void);
@@ -90,13 +95,6 @@ extern bool INTREQ_0(uae_u16);
 extern void INTREQ_f(uae_u16);
 extern void send_interrupt(int num, int delay);
 extern void rethink_uae_int(void);
-STATIC_INLINE void safe_interrupt_set(bool i6)
-{
-	uae_u16 v = i6 ? 0x2000 : 0x0008;
-	if (!(intreq & v)) {
-		INTREQ_0(0x8000 | v);
-	}
-}
 extern uae_u16 INTREQR(void);
 
 /* maximums for statically allocated tables */
@@ -227,8 +225,8 @@ STATIC_INLINE int GET_PLANES(uae_u16 bplcon0)
 
 extern void fpscounter_reset (void);
 extern unsigned long idletime;
-//extern int lightpen_x[2], lightpen_y[2];
-//extern int lightpen_cx[2], lightpen_cy[2], lightpen_active, lightpen_enabled, lightpen_enabled2;
+extern int lightpen_x[2], lightpen_y[2];
+extern int lightpen_cx[2], lightpen_cy[2], lightpen_active, lightpen_enabled, lightpen_enabled2;
 
 struct customhack {
 	uae_u16 v;
@@ -241,10 +239,10 @@ extern void alloc_cycle_blitter (int hpos, uaecptr *ptr, int);
 extern bool ispal (void);
 extern bool isvga (void);
 extern int current_maxvpos (void);
-extern struct chipset_refresh *get_chipset_refresh(struct uae_prefs*);
-extern void compute_framesync(void);
-//extern void getsyncregisters(uae_u16 *phsstrt, uae_u16 *phsstop, uae_u16 *pvsstrt, uae_u16 *pvsstop);
-int is_bitplane_dma(int hpos);
+extern struct chipset_refresh *get_chipset_refresh (struct uae_prefs*);
+extern void compute_framesync (void);
+extern void getsyncregisters(uae_u16 *phsstrt, uae_u16 *phsstop, uae_u16 *pvsstrt, uae_u16 *pvsstop);
+int is_bitplane_dma (int hpos);
 void custom_cpuchange(void);
 
 struct custom_store

@@ -7,6 +7,8 @@
 #pragma once
 #include <SDL.h>
 
+#include "options.h"
+
 #define TARGET_NAME _T("amiberry")
 
 #define NO_MAIN_IN_MAIN_C
@@ -22,8 +24,8 @@
 #define GETBDM(x) (((x) - (((x) / 10000) * 10000)) / 100)
 #define GETBDD(x) ((x) % 100)
 
-#define AMIBERRYVERSION _T("Amiberry v3.3 (2020-09-17)")
-#define AMIBERRYDATE MAKEBD(2020, 9, 17)
+#define AMIBERRYVERSION _T("Amiberry v4.1.2 (2021-04-06)")
+#define AMIBERRYDATE MAKEBD(2021, 4, 6)
 
 #define IHF_WINDOWHIDDEN 6
 
@@ -34,8 +36,24 @@ STATIC_INLINE FILE* uae_tfopen(const TCHAR* path, const TCHAR* mode)
 	return fopen(path, mode);
 }
 
-extern void fix_apmodes(struct uae_prefs* p);
-extern int generic_main(int argc, char* argv[]);
+extern int mouseactive;
+extern int minimized;
+extern int monitor_off;
+
+extern void logging_init();
+
+extern bool my_kbd_handler(int, int, int, bool);
+extern void clearallkeys();
+extern int getcapslock();
+
+void releasecapture(struct AmigaMonitor*);
+extern void disablecapture();
+
+extern amiberry_hotkey enter_gui_key;
+extern amiberry_hotkey quit_key;
+extern amiberry_hotkey action_replay_key;
+extern amiberry_hotkey fullscreen_key;
+extern amiberry_hotkey minimize_key;
 
 extern int emulating;
 extern bool config_loaded;
@@ -43,22 +61,25 @@ extern bool config_loaded;
 extern int z3_base_adr;
 #ifdef USE_DISPMANX
 extern unsigned long time_per_frame;
-extern bool volatile flip_in_progess;
 #endif
+extern bool volatile flip_in_progess;
+
+void amiberry_gui_init();
+void gui_widgets_init();
 void run_gui(void);
-void InGameMessage(const char* msg);
+void gui_widgets_halt();
+void amiberry_gui_halt();
 void init_max_signals(void);
 void wait_for_vsync(void);
 unsigned long target_lastsynctime(void);
-extern int screen_is_picasso;
 
 void save_amiberry_settings(void);
 void update_display(struct uae_prefs*);
-void black_screen_now(void);
+void clearscreen(void);
 void graphics_subshutdown(void);
 
-void keyboard_settrans();
-void set_mouse_grab(bool grab);
+extern void wait_keyrelease(void);
+extern void keyboard_settrans(void);
 
 extern void free_AmigaMem();
 extern void alloc_AmigaMem();
@@ -90,9 +111,19 @@ extern void ReadConfigFileList(void);
 extern void RescanROMs(void);
 extern void SymlinkROMs(void);
 extern void ClearAvailableROMList(void);
-extern void setpriority(int prio);
+
+extern void minimizewindow(int monid);
+extern void updatewinrect(struct AmigaMonitor*, bool);
+
+extern bool resumepaused(int priority);
 extern bool setpaused(int priority);
-extern void init_colors();
+extern void unsetminimized(int monid);
+extern void setminimized(int monid);
+
+
+extern void setpriority(int prio);
+void init_colors(int monid);
+
 
 #include <vector>
 #include <string>
@@ -120,6 +151,7 @@ extern void AddFileToWHDLoadList(const char* file, int moveToTop);
 
 int count_HDs(struct uae_prefs* p);
 extern void gui_force_rtarea_hdchange(void);
+extern int isfocus(void);
 extern void gui_restart(void);
 extern bool hardfile_testrdb(const char* filename);
 
@@ -220,6 +252,25 @@ void restore_host_fp_regs(void* buf);
 #endif
 #endif
 
+#ifndef _WIN32
+// Dummy types so this header file can be included on other platforms (for
+// a few declarations).
+typedef void* HINSTANCE;
+typedef void* HMODULE;
+typedef void* HWND;
+typedef void* HKEY;
+typedef void* OSVERSIONINFO;
+typedef bool BOOL;
+typedef int LPARAM;
+typedef int WPARAM;
+typedef int WORD;
+typedef unsigned int UINT;
+typedef long LONG;
+#define WINAPI
+typedef long GUID;
+typedef wchar_t* LPCWSTR;
+#endif
+
 #define MAX_SOUND_DEVICES 100
 #define SOUND_DEVICE_DS 1
 #define SOUND_DEVICE_AL 2
@@ -228,3 +279,23 @@ void restore_host_fp_regs(void* buf);
 #define SOUND_DEVICE_WASAPI_EXCLUSIVE 5
 #define SOUND_DEVICE_XAUDIO2 6
 #define SOUND_DEVICE_SDL2 7
+
+struct sound_device
+{
+	GUID guid;
+	TCHAR* name;
+	TCHAR* alname;
+	TCHAR* cfgname;
+	TCHAR* prefix;
+	int panum;
+	int type;
+};
+extern struct sound_device* sound_devices[MAX_SOUND_DEVICES];
+extern struct sound_device* record_devices[MAX_SOUND_DEVICES];
+
+static inline int uae_deterministic_mode()
+{
+	// Only returns 1 if using netplay mode (not implemented yet)
+	return 0;
+}
+

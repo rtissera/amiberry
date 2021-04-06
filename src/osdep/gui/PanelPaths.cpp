@@ -32,7 +32,7 @@ static gcn::Button* cmdLogfilePath;
 
 static gcn::Button* cmdRescanROMs;
 static gcn::Button* cmdDownloadXML;
-
+static gcn::Button* cmdDownloadCtrlDb;
 
 class FolderButtonActionListener : public gcn::ActionListener
 {
@@ -112,6 +112,7 @@ public:
 	void action(const gcn::ActionEvent& actionEvent) override
 	{
 		set_logfile_enabled(chkEnableLogging->isSelected());
+		logging_init();
 		RefreshPanelPaths();
 	}
 };
@@ -131,7 +132,7 @@ public:
 		RefreshPanelCustom();
 		RefreshPanelROM();
 
-		ShowMessage("Rescan Paths", "Scan complete,", "Symlinks recreated.", "Ok", "");
+		ShowMessage("Rescan Paths", "Scan complete,", "ROMs updated, Joysticks (re)initialized, Symlinks recreated.", "Ok", "");
 		cmdRescanROMs->requestFocus();
 	}
 };
@@ -210,6 +211,31 @@ public:
 
 static DownloadXMLButtonActionListener* downloadXMLButtonActionListener;
 
+class DownloadControllerDbActionListener : public gcn::ActionListener
+{
+public:
+	void action(const gcn::ActionEvent& actionEvent) override
+	{
+		char destination[MAX_DPATH];
+		get_configuration_path(destination, MAX_DPATH);
+		strcat(destination, "gamecontrollerdb.txt");
+		write_log("Downloading % ...\n", destination);
+		const auto* const url = "https://raw.githubusercontent.com/gabomdq/SDL_GameControllerDB/master/gamecontrollerdb.txt";
+		const auto result = download_file(url, destination);
+
+		if (result)
+		{
+			import_joysticks();
+			ShowMessage("Game Controllers DB", "Latest version of Game Controllers DB downloaded.", "", "Ok", "");
+		}
+		else
+			ShowMessage("Game Controllers DB", "Failed to download file!", "Please check the log for more information", "Ok", "");
+
+		cmdDownloadCtrlDb->requestFocus();
+	}
+};
+static DownloadControllerDbActionListener* downloadControllerDbActionListener;
+
 void InitPanelPaths(const struct _ConfigCategory& category)
 {
 	const auto textFieldWidth = category.panel->getWidth() - 2 * DISTANCE_BORDER - SMALL_BUTTON_WIDTH - DISTANCE_NEXT_X;
@@ -222,7 +248,7 @@ void InitPanelPaths(const struct _ConfigCategory& category)
 	txtSystemROMs->setBackgroundColor(colTextboxBackground);
 
 	cmdSystemROMs = new gcn::Button("...");
-	cmdSystemROMs->setId("SystemROMs");
+	cmdSystemROMs->setId("cmdSystemROMs");
 	cmdSystemROMs->setSize(SMALL_BUTTON_WIDTH, SMALL_BUTTON_HEIGHT);
 	cmdSystemROMs->setBaseColor(gui_baseCol);
 	cmdSystemROMs->addActionListener(folderButtonActionListener);
@@ -233,7 +259,7 @@ void InitPanelPaths(const struct _ConfigCategory& category)
 	txtConfigPath->setBackgroundColor(colTextboxBackground);
 
 	cmdConfigPath = new gcn::Button("...");
-	cmdConfigPath->setId("ConfigPath");
+	cmdConfigPath->setId("cmdConfigPath");
 	cmdConfigPath->setSize(SMALL_BUTTON_WIDTH, SMALL_BUTTON_HEIGHT);
 	cmdConfigPath->setBaseColor(gui_baseCol);
 	cmdConfigPath->addActionListener(folderButtonActionListener);
@@ -244,7 +270,7 @@ void InitPanelPaths(const struct _ConfigCategory& category)
 	txtControllersPath->setBackgroundColor(colTextboxBackground);
 
 	cmdControllersPath = new gcn::Button("...");
-	cmdControllersPath->setId("ControllersPath");
+	cmdControllersPath->setId("cmdControllersPath");
 	cmdControllersPath->setSize(SMALL_BUTTON_WIDTH, SMALL_BUTTON_HEIGHT);
 	cmdControllersPath->setBaseColor(gui_baseCol);
 	cmdControllersPath->addActionListener(folderButtonActionListener);
@@ -255,7 +281,7 @@ void InitPanelPaths(const struct _ConfigCategory& category)
 	txtRetroArchFile->setBackgroundColor(colTextboxBackground);
 
 	cmdRetroArchFile = new gcn::Button("...");
-	cmdRetroArchFile->setId("RetroArchFile");
+	cmdRetroArchFile->setId("cmdRetroArchFile");
 	cmdRetroArchFile->setSize(SMALL_BUTTON_WIDTH, SMALL_BUTTON_HEIGHT);
 	cmdRetroArchFile->setBaseColor(gui_baseCol);
 	cmdRetroArchFile->addActionListener(folderButtonActionListener);
@@ -312,19 +338,28 @@ void InitPanelPaths(const struct _ConfigCategory& category)
 	cmdRescanROMs = new gcn::Button("Rescan Paths");
 	cmdRescanROMs->setSize(cmdRescanROMs->getWidth() + DISTANCE_BORDER, BUTTON_HEIGHT);
 	cmdRescanROMs->setBaseColor(gui_baseCol);
-	cmdRescanROMs->setId("RescanROMs");
+	cmdRescanROMs->setId("cmdRescanROMs");
 	cmdRescanROMs->addActionListener(rescanROMsButtonActionListener);
 
 	downloadXMLButtonActionListener = new DownloadXMLButtonActionListener();
 	cmdDownloadXML = new gcn::Button("Update WHDLoad XML");
 	cmdDownloadXML->setSize(cmdDownloadXML->getWidth() + DISTANCE_BORDER, BUTTON_HEIGHT);
 	cmdDownloadXML->setBaseColor(gui_baseCol);
-	cmdDownloadXML->setId("DownloadXML");
+	cmdDownloadXML->setId("cmdDownloadXML");
 	cmdDownloadXML->addActionListener(downloadXMLButtonActionListener);
 
+	downloadControllerDbActionListener = new DownloadControllerDbActionListener();
+	cmdDownloadCtrlDb = new gcn::Button("Update Controllers DB");
+	cmdDownloadCtrlDb->setSize(cmdDownloadCtrlDb->getWidth() + DISTANCE_BORDER, BUTTON_HEIGHT);
+	cmdDownloadCtrlDb->setBaseColor(gui_baseCol);
+	cmdDownloadCtrlDb->setId("cmdDownloadCtrlDb");
+	cmdDownloadCtrlDb->addActionListener(downloadControllerDbActionListener);
+	
 	category.panel->add(cmdRescanROMs, DISTANCE_BORDER, category.panel->getHeight() - BUTTON_HEIGHT - DISTANCE_BORDER);
-	category.panel->add(cmdDownloadXML, DISTANCE_BORDER + cmdRescanROMs->getWidth() + 20,
-	                    category.panel->getHeight() - BUTTON_HEIGHT - DISTANCE_BORDER);
+	category.panel->add(cmdDownloadXML, cmdRescanROMs->getX() + cmdRescanROMs->getWidth() + DISTANCE_NEXT_X,
+		category.panel->getHeight() - BUTTON_HEIGHT - DISTANCE_BORDER);
+	category.panel->add(cmdDownloadCtrlDb, cmdDownloadXML->getX() + cmdDownloadXML->getWidth() + DISTANCE_NEXT_X,
+		category.panel->getHeight() - BUTTON_HEIGHT - DISTANCE_BORDER);
 
 	RefreshPanelPaths();
 }
@@ -354,9 +389,11 @@ void ExitPanelPaths()
 	
 	delete cmdRescanROMs;
 	delete cmdDownloadXML;
+	delete cmdDownloadCtrlDb;
 	delete folderButtonActionListener;
 	delete rescanROMsButtonActionListener;
 	delete downloadXMLButtonActionListener;
+	delete downloadControllerDbActionListener;
 	delete enableLoggingActionListener;
 }
 
@@ -401,6 +438,9 @@ bool HelpPanelPaths(std::vector<std::string>& helptext)
 	helptext.emplace_back(" ");
 	helptext.emplace_back("You can download the latest version of the WHDLoad Booter XML file, using the");
 	helptext.emplace_back("relevant button. You will need an internet connection for this to work.");
+	helptext.emplace_back(" ");
+	helptext.emplace_back("You can also download the latest Game Controller DB file, using the relevant button.");
+	helptext.emplace_back("BEWARE: this will overwrite any changes you may have had in your local file!");
 	helptext.emplace_back(" ");
 	helptext.emplace_back("These settings are saved automatically when you click Rescan, or exit the emulator.");
 	return true;

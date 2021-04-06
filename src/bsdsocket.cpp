@@ -23,11 +23,13 @@
 #include "bsdsocket.h"
 #include "threaddep/thread.h"
 #include "native2amiga.h"
+//#include "debug.h"
 
 #ifdef BSDSOCKET
 
 #define NEWTRAP 1
 
+int log_bsd = 0;
 struct socketbase *socketbases;
 static uae_u32 SockLibBase;
 
@@ -1297,6 +1299,8 @@ static uae_u32 strErrptr, strReleaseVer;
 #define SBTC_ERRNOLONGPTR   24
 #define SBTC_HERRNOLONGPTR  25
 #define SBTC_RELEASESTRPTR  29
+#define SBTC_GET_BYTES_RECEIVED 64
+#define SBTC_GET_BYTES_SENT 65
 
 #define LOG_FACMASK     0x03f8
 
@@ -1511,6 +1515,19 @@ static uae_u32 REGPARAM2 bsdsocklib_SocketBaseTagList(TrapContext *ctx)
 						tagcopy(ctx, currtag, currval, tagptr, &strReleaseVer);
 					}
 					break;
+				case SBTC_GET_BYTES_RECEIVED:
+					if ((currtag & 0x8001) == 0x8000) { /* SBTM_GETREF */
+						trap_put_long(ctx, currval + 0, sb->bytesreceived >> 32);
+						trap_put_long(ctx, currval + 4, sb->bytesreceived >> 0);
+					}
+					break;
+				case SBTC_GET_BYTES_SENT:
+					if ((currtag & 0x8001) == 0x8000) { /* SBTM_GETREF */
+						trap_put_long(ctx, currval + 0, sb->bytestransmitted >> 32);
+						trap_put_long(ctx, currval + 4, sb->bytestransmitted >> 0);
+					}
+					break;
+
 				default:
 					write_log (_T("bsdsocket: WARNING: Unsupported tag type (%08x=%d) in SocketBaseTagList(%x)\n"),
 						currtag, (currtag / 2) & SBTS_CODE, trap_get_areg(ctx, 0));
@@ -1570,20 +1587,34 @@ static uae_u32 REGPARAM2 bsdsocklib_init(TrapContext *ctx)
 	if (SockLibBase)
 		bsdlib_reset ();
 
+#if NEWTRAP
 	trap_call_add_areg(ctx, 0, functable);
 	trap_call_add_areg(ctx, 1, datatable);
 	trap_call_add_areg(ctx, 2, 0);
 	trap_call_add_dreg(ctx, 0, LIBRARY_SIZEOF);
 	trap_call_add_dreg(ctx, 1, 0);
 	tmp1 = trap_call_lib(ctx, trap_get_areg(ctx, 6), -0x54); /* MakeLibrary */
+#else
+	trap_get_areg(ctx, 0) = functable;
+	trap_get_areg(ctx, 1) = datatable;
+	trap_get_areg(ctx, 2) = 0;
+	trap_get_dreg(ctx, 0) = LIBRARY_SIZEOF;
+	trap_get_dreg(ctx, 1) = 0;
+	tmp1 = CallLib(ctx, trap_get_areg(ctx, 6), -0x54); /* MakeLibrary */
+#endif
 
 	if (!tmp1) {
 		write_log (_T("bsdoscket: FATAL: Cannot create bsdsocket.library!\n"));
 		return 0;
 	}
 	
+#if NEWTRAP
 	trap_call_add_areg(ctx, 1, tmp1);
 	trap_call_lib(ctx, trap_get_areg(ctx, 6), -0x18c); /* AddLibrary */
+#else
+	trap_get_areg(ctx, 1) = tmp1;
+	CallLib (ctx, trap_get_areg(ctx, 6), -0x18c); /* AddLibrary */
+#endif
 
 	SockLibBase = tmp1;
 
@@ -1601,9 +1632,15 @@ static uae_u32 REGPARAM2 bsdsocklib_init(TrapContext *ctx)
 	tmp1 += _tcslen(strErr) + 1;
 	tmp1 += _tcslen(verStr) + 1;
 
+#if NEWTRAP
 	trap_call_add_dreg(ctx, 0, tmp1);
 	trap_call_add_dreg(ctx, 1, 0);
 	tmp1 = trap_call_lib(ctx, trap_get_areg(ctx, 6), -0xC6); /* AllocMem */
+#else		
+	trap_get_dreg(ctx, 0) = tmp1;
+	trap_get_dreg(ctx, 1) = 0;
+	tmp1 = CallLib (ctx, trap_get_areg(ctx, 6), -0xC6); /* AllocMem */
+#endif
 
 	if (!tmp1) {
 		write_log (_T("bsdsocket: FATAL: Ran out of memory while creating bsdsocket.library!\n"));

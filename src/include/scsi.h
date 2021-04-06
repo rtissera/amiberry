@@ -244,6 +244,9 @@ void hda506_add_scsi_unit(int ch, struct uaedev_config_info *ci, struct romconfi
 bool alf1_init(struct autoconfig_info *aci);
 void alf1_add_scsi_unit(int ch, struct uaedev_config_info *ci, struct romconfig *rc);
 
+bool alf2_init(struct autoconfig_info *aci);
+void alf2_add_scsi_unit(int ch, struct uaedev_config_info *ci, struct romconfig *rc);
+
 bool promigos_init(struct autoconfig_info *aci);
 void promigos_add_scsi_unit(int ch, struct uaedev_config_info *ci, struct romconfig *rc);
 
@@ -302,6 +305,12 @@ void fasttrak_add_scsi_unit(int ch, struct uaedev_config_info *ci, struct romcon
 
 bool overdrive_init(struct autoconfig_info *aci);
 void overdrive_add_scsi_unit(int ch, struct uaedev_config_info *ci, struct romconfig *rc);
+
+bool synthesis_init(struct autoconfig_info* aci);
+void synthesis_add_scsi_unit(int ch, struct uaedev_config_info *ci, struct romconfig *rc);
+
+bool fireball_init(struct autoconfig_info* aci);
+void fireball_add_scsi_unit(int ch, struct uaedev_config_info* ci, struct romconfig* rc);
 
 uae_u8 idescsi_scsi_get(uaecptr addr);
 void idescsi_scsi_put(uaecptr addr, uae_u8 v);

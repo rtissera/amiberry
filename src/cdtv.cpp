@@ -79,6 +79,7 @@ static volatile uae_u16 dmac_dawr;
 static volatile uae_u32 dmac_acr;
 static volatile int dmac_wtc;
 static volatile int dmac_dma;
+static uae_u32 dma_mask;
 
 static volatile int activate_stch, cdrom_command_done;
 static volatile int cdrom_sector, cdrom_sectors, cdrom_length, cdrom_offset;
@@ -103,7 +104,7 @@ static void do_stch (void);
 
 static void INT2 (void)
 {
-	safe_interrupt_set(false);
+	safe_interrupt_set(IRQ_SOURCE_CD32CDTV, 0, false);
 	cd_led ^= LED_CD_ACTIVE2;
 }
 
@@ -679,8 +680,8 @@ static void dma_do_thread (void)
 			}
 
 		}
-		put_byte (dmac_acr, buffer[(cdrom_offset % cdtv_sectorsize) + 0]);
-		put_byte (dmac_acr + 1, buffer[(cdrom_offset % cdtv_sectorsize) + 1]);
+		dma_put_byte(dmac_acr & dma_mask, buffer[(cdrom_offset % cdtv_sectorsize) + 0]);
+		dma_put_byte((dmac_acr + 1) & dma_mask, buffer[(cdrom_offset % cdtv_sectorsize) + 1]);
 		cnt--;
 		dmac_acr += 2;
 		cdrom_length -= 2;
@@ -1501,7 +1502,7 @@ static addrbank dmac_bank = {
 	dmac_lget, dmac_wget, dmac_bget,
 	dmac_lput, dmac_wput, dmac_bput,
 	default_xlate, default_check, NULL, NULL, _T("CDTV DMAC/CD Controller"),
-	dmac_wgeti,
+	dmac_lgeti, dmac_wgeti,
 	ABFLAG_IO, S_READ, S_WRITE
 };
 
@@ -1649,7 +1650,7 @@ addrbank cardmem_bank = {
 	cardmem_lget, cardmem_wget, cardmem_bget,
 	cardmem_lput, cardmem_wput, cardmem_bput,
 	cardmem_xlate, cardmem_check, NULL, _T("rom_e0"), _T("CDTV memory card"),
-	cardmem_wget,
+	cardmem_lget, cardmem_wget,
 	ABFLAG_RAM, 0, 0
 };
 
@@ -1695,6 +1696,7 @@ bool cdtv_init(struct autoconfig_info *aci)
 	ew(0x24, 0x00); /* ser.no. Byte 3 */
 
 	if (aci) {
+		dma_mask = aci->rc->dma24bit ? 0x00ffffff : 0xffffffff;
 		aci->label = dmac_bank.name;
 		aci->hardwired = true;
 		aci->addrbank = &dmac_bank;
@@ -1772,7 +1774,7 @@ bool cdtvscsi_init(struct autoconfig_info *aci)
 	if (!aci->doinit)
 		return true;
 	cdtvscsi = true;
-	//init_wd_scsi(wd_cdtv);
+	//init_wd_scsi(wd_cdtv, aci->rc->dma24bit);
 	//wd_cdtv->dmac_type = COMMODORE_DMAC;
 	if (configured > 0)
 		map_banks_z2(&dmac_bank, configured, 0x10000 >> 16);
@@ -1943,7 +1945,11 @@ void restore_cdtv_final(void)
 		write_comm_pipe_u32(&requests, last_play_pos, 0);
 		write_comm_pipe_u32(&requests, last_play_end, 0);
 		write_comm_pipe_u32(&requests, 0, 1);
-		uae_sem_wait(&cda_sem);
+		if (cd_paused) {
+			write_comm_pipe_u32(&requests, 0x0105, 1); // paused
+		} else {
+			uae_sem_wait(&cda_sem);
+		}
 	}
 }
 

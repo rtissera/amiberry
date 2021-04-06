@@ -7,8 +7,15 @@
 #include "threaddep/thread.h"
 #include "memory.h"
 #include "audio.h"
+//#include "gfxboard.h"
 #include "scsi.h"
 #include "scsidev.h"
+#include "sana2.h"
+#include "clipboard.h"
+//#include "cpuboard.h"
+//#include "sndboard.h"
+#include "statusline.h"
+//#include "uae/ppc.h"
 #ifdef CD32
 #include "cd32_fmv.h"
 #include "akiko.h"
@@ -17,26 +24,39 @@
 #include "cia.h"
 #include "inputdevice.h"
 #include "blkdev.h"
+#include "parallel.h"
 #include "autoconf.h"
+//#include "sampler.h"
 #include "newcpu.h"
-#include "savestate.h"
 #include "blitter.h"
 #include "xwin.h"
 #include "custom.h"
+#ifdef SERIAL_PORT
+#include "serial.h"
+#endif
 #include "bsdsocket.h"
-#include "clipboard.h"
+//#include "uaeserial.h"
 #include "uaeresource.h"
 #include "native2amiga.h"
+//#include "dongle.h"
 #include "gensound.h"
 #include "gui.h"
-#include "drawing.h"
+#include "savestate.h"
+#include "uaeexe.h"
+#ifdef WITH_UAENATIVE
+#include "uaenative.h"
+#endif
+#include "tabletlibrary.h"
+//#include "luascript.h"
 #ifdef DRIVESOUND
 #include "driveclick.h"
 #endif
-#include "statusline.h"
-#include "uaeexe.h"
-#ifdef JIT
-#include "jit/compemu.h"
+#include "drawing.h"
+//#include "videograb.h"
+#include "rommgr.h"
+#include "newcpu.h"
+#ifdef RETROPLATFORM
+#include "rp.h"
 #endif
 
 #define MAX_DEVICE_ITEMS 64
@@ -195,7 +215,7 @@ void devices_reset(int hardreset)
 	uaeserialdev_reset();
 	uaeserialdev_start_threads();
 #endif
-#if defined (PARALLEL_PORT)
+#if defined (PARALLEL_PORT) || defined (AHI)
 	initparallel();
 #endif
 	//dongle_reset();
@@ -212,11 +232,11 @@ void devices_reset(int hardreset)
 
 void devices_vsync_pre(void)
 {
-	//audio_vsync (); // this is a no-op!
-	blkdev_vsync();
-	CIA_vsync_prehandler();
-	inputdevice_vsync();
-	filesys_vsync();
+	audio_vsync ();
+	blkdev_vsync ();
+	CIA_vsync_prehandler ();
+	inputdevice_vsync ();
+	filesys_vsync ();
 	//sampler_vsync ();
 	clipboard_vsync ();
 	statusline_vsync();
@@ -233,10 +253,12 @@ void devices_hsync(void)
 {
 	DISK_hsync();
 	audio_hsync();
-	//CIA_hsync_prehandler(); // This is a no-op!
+	CIA_hsync_prehandler();
 
-	decide_blitter(-1);
-	//serial_hsynchandler ();
+	decide_blitter (-1);
+#ifdef SERIAL_PORT
+	serial_hsynchandler ();
+#endif
 
 	execute_device_items(device_hsyncs, device_hsync_cnt);
 }
@@ -259,8 +281,10 @@ void devices_rethink(void)
 
 void devices_update_sound(double clk, double syncadjust)
 {
-	update_sound(clk);
+	update_sound (clk);
+	//update_sndboard_sound (clk / syncadjust);
 	update_cda_sound(clk / syncadjust);
+	//x86_update_sound(clk / syncadjust);
 }
 
 void devices_update_sync(double svpos, double syncadjust)
@@ -282,13 +306,12 @@ void do_leave_program (void)
 	inputdevice_close ();
 	DISK_free ();
 	close_sound ();
-	dump_counts ();
 #ifdef SERIAL_PORT
 	serial_exit ();
 #endif
 	if (! no_gui)
 		gui_exit ();
-	SDL_Quit();
+	//SDL_Quit();
 #ifdef AUTOCONFIG
 	expansion_cleanup ();
 #endif
@@ -307,7 +330,7 @@ void do_leave_program (void)
 	memory_cleanup ();
 	free_shm ();
 	cfgfile_addcfgparam (0);
-	machdep_free ();
+	//machdep_free ();
 #ifdef DRIVESOUND
 	driveclick_free();
 #endif
@@ -365,15 +388,20 @@ void devices_restore_start(void)
 {
 	restore_cia_start();
 	restore_blkdev_start();
-	changed_prefs.bogomem_size = 0;
-	changed_prefs.chipmem_size = 0;
+	changed_prefs.bogomem.size = 0;
+	changed_prefs.chipmem.size = 0;
 	for (int i = 0; i < MAX_RAM_BOARDS; i++) {
 		changed_prefs.fastmem[i].size = 0;
 		changed_prefs.z3fastmem[i].size = 0;
 	}
-	changed_prefs.mbresmem_low_size = 0;
-	changed_prefs.mbresmem_high_size = 0;
+	changed_prefs.mbresmem_low.size = 0;
+	changed_prefs.mbresmem_high.size = 0;
 	restore_expansion_boards(NULL);
+}
+
+void devices_syncchange(void)
+{
+	//x86_bridge_sync_change();
 }
 
 void devices_pause(void)

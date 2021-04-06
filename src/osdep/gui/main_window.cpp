@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include <guisan.hpp>
+#include <SDL_image.h>
 #include <SDL_ttf.h>
 #include <guisan/sdl.hpp>
 #include <guisan/sdl/sdltruetypefont.hpp>
@@ -16,19 +17,19 @@
 #include "uae.h"
 #include "gui_handling.h"
 #include "amiberry_gfx.h"
-#include "amiberry_filesys.hpp"
+#include "fsdb_host.h"
 #include "autoconf.h"
-
-#include "inputdevice.h"
+#include "amiberry_input.h"
 
 #if defined(ANDROID)
 #include "androidsdl_event.h"
-//#include <SDL_screenkeyboard.h>
-//#include <SDL_android.h>
 #include <android/log.h>
 #endif
 
-std::vector<int> joypad_axis_state; // Keep track of horizontal and vertical axis states
+//Analog joystick dead zone
+const int joystick_dead_zone = 8000;
+int last_x = 0;
+int last_y = 0;
 
 bool gui_running = false;
 static int last_active_panel = 3;
@@ -45,45 +46,41 @@ void target_startup_msg(const TCHAR* title, const TCHAR* msg)
 }
 
 ConfigCategory categories[] = {
-	{
-		"About", "data/amigainfo.ico", nullptr, nullptr, InitPanelAbout, ExitPanelAbout, RefreshPanelAbout,
+	{"About", "data/amigainfo.ico", nullptr, nullptr, InitPanelAbout, ExitPanelAbout, RefreshPanelAbout,
 		HelpPanelAbout
 	},
 	{"Paths", "data/paths.ico", nullptr, nullptr, InitPanelPaths, ExitPanelPaths, RefreshPanelPaths, HelpPanelPaths},
-	{
-		"Quickstart", "data/quickstart.ico", nullptr, nullptr, InitPanelQuickstart, ExitPanelQuickstart,
+	{"Quickstart", "data/quickstart.ico", nullptr, nullptr, InitPanelQuickstart, ExitPanelQuickstart,
 		RefreshPanelQuickstart, HelpPanelQuickstart
 	},
-	{
-		"Configurations", "data/file.ico", nullptr, nullptr, InitPanelConfig, ExitPanelConfig, RefreshPanelConfig,
+	{"Configurations", "data/file.ico", nullptr, nullptr, InitPanelConfig, ExitPanelConfig, RefreshPanelConfig,
 		HelpPanelConfig
 	},
 	{"CPU and FPU", "data/cpu.ico", nullptr, nullptr, InitPanelCPU, ExitPanelCPU, RefreshPanelCPU, HelpPanelCPU},
-	{
-		"Chipset", "data/cpu.ico", nullptr, nullptr, InitPanelChipset, ExitPanelChipset, RefreshPanelChipset,
+	{"Chipset", "data/cpu.ico", nullptr, nullptr, InitPanelChipset, ExitPanelChipset, RefreshPanelChipset,
 		HelpPanelChipset
 	},
 	{"ROM", "data/chip.ico", nullptr, nullptr, InitPanelROM, ExitPanelROM, RefreshPanelROM, HelpPanelROM},
 	{"RAM", "data/chip.ico", nullptr, nullptr, InitPanelRAM, ExitPanelRAM, RefreshPanelRAM, HelpPanelRAM},
-	{
-		"Floppy drives", "data/35floppy.ico", nullptr, nullptr, InitPanelFloppy, ExitPanelFloppy, RefreshPanelFloppy,
+	{"Floppy drives", "data/35floppy.ico", nullptr, nullptr, InitPanelFloppy, ExitPanelFloppy, RefreshPanelFloppy,
 		HelpPanelFloppy
 	},
 	{"Hard drives/CD", "data/drive.ico", nullptr, nullptr, InitPanelHD, ExitPanelHD, RefreshPanelHD, HelpPanelHD},
-	{
-		"Display", "data/screen.ico", nullptr, nullptr, InitPanelDisplay, ExitPanelDisplay, RefreshPanelDisplay,
+	{"RTG board", "data/expansion.ico", nullptr, nullptr, InitPanelRTG, ExitPanelRTG,
+		RefreshPanelRTG, HelpPanelRTG
+	},
+	{"Hardware info", "data/expansion.ico", nullptr, nullptr, InitPanelHWInfo, ExitPanelHWInfo, RefreshPanelHWInfo, HelpPanelHWInfo},
+	{"Display", "data/screen.ico", nullptr, nullptr, InitPanelDisplay, ExitPanelDisplay, RefreshPanelDisplay,
 		HelpPanelDisplay
 	},
 	{"Sound", "data/sound.ico", nullptr, nullptr, InitPanelSound, ExitPanelSound, RefreshPanelSound, HelpPanelSound},
 	{"Input", "data/joystick.ico", nullptr, nullptr, InitPanelInput, ExitPanelInput, RefreshPanelInput, HelpPanelInput},
-	{
-		"Custom controls", "data/controller.png", nullptr, nullptr, InitPanelCustom, ExitPanelCustom,
+	{"Custom controls", "data/controller.png", nullptr, nullptr, InitPanelCustom, ExitPanelCustom,
 		RefreshPanelCustom, HelpPanelCustom
 	},
 	{"Miscellaneous", "data/misc.ico", nullptr, nullptr, InitPanelMisc, ExitPanelMisc, RefreshPanelMisc, HelpPanelMisc},
 	{ "Priority", "data/misc.ico", nullptr, nullptr, InitPanelPrio, ExitPanelPrio, RefreshPanelPrio, HelpPanelPrio},
-	{
-		"Savestates", "data/savestate.png", nullptr, nullptr, InitPanelSavestate, ExitPanelSavestate,
+	{"Savestates", "data/savestate.png", nullptr, nullptr, InitPanelSavestate, ExitPanelSavestate,
 		RefreshPanelSavestate, HelpPanelSavestate
 	},
 #ifdef ANDROID
@@ -104,6 +101,8 @@ enum
 	PANEL_RAM,
 	PANEL_FLOPPY,
 	PANEL_HD,
+	PANEL_RTG,
+	PANEL_HWINFO,
 	PANEL_DISPLAY,
 	PANEL_SOUND,
 	PANEL_INPUT,
@@ -123,7 +122,6 @@ SDL_Joystick* gui_joystick;
 SDL_Surface* gui_screen;
 SDL_Event gui_event;
 SDL_Event touch_event;
-SDL_Window* sdl_window;
 #ifdef USE_DISPMANX
 DISPMANX_RESOURCE_HANDLE_T gui_resource;
 DISPMANX_RESOURCE_HANDLE_T black_gui_resource;
@@ -221,13 +219,19 @@ static void show_help_requested()
 	}
 }
 
-void cap_fps(Uint64 start, int fps)
+void cap_fps(Uint64 start)
 {
+	int refresh_rate;
 	const auto end = SDL_GetPerformanceCounter();
 	const auto elapsed_ms = static_cast<float>(end - start) / static_cast<float>(SDL_GetPerformanceFrequency()) * 1000.0f;
-	if (fps == 60)
+#ifdef USE_DISPMANX
+	refresh_rate = 60;
+#else
+	refresh_rate = sdlMode.refresh_rate;
+#endif
+	if (refresh_rate < 60)
 		SDL_Delay(floor(16.666f - elapsed_ms));
-	else if (fps == 50)
+	else
 		SDL_Delay(floor(20.000f - elapsed_ms));
 }
 
@@ -239,15 +243,14 @@ void update_gui_screen()
 	vc_dispmanx_element_change_source(updateHandle, gui_element, gui_resource);
 	vc_dispmanx_update_submit_sync(updateHandle);
 #else
-	SDL_RenderClear(renderer);
 	SDL_UpdateTexture(gui_texture, nullptr, gui_screen->pixels, gui_screen->pitch);
 	if (amiberry_options.rotation_angle == 0 || amiberry_options.rotation_angle == 180)
 		renderQuad = { 0, 0, gui_screen->w, gui_screen->h };
 	else
 		renderQuad = { -(GUI_WIDTH - GUI_HEIGHT) / 2, (GUI_WIDTH - GUI_HEIGHT) / 2, gui_screen->w, gui_screen->h };
 	
-	SDL_RenderCopyEx(renderer, gui_texture, nullptr, &renderQuad, amiberry_options.rotation_angle, nullptr, SDL_FLIP_NONE);
-	SDL_RenderPresent(renderer);
+	SDL_RenderCopyEx(sdl_renderer, gui_texture, nullptr, &renderQuad, amiberry_options.rotation_angle, nullptr, SDL_FLIP_NONE);
+	SDL_RenderPresent(sdl_renderer);
 #endif
 }
 
@@ -255,16 +258,7 @@ void update_gui_screen()
 #else
 void setup_cursor()
 {
-	// Detect resolution and load appropriate cursor image
-	if (strcmp(sdl_video_driver, "x11") != 0 && sdlMode.w > 1280)
-	{
-		cursor_surface = SDL_LoadBMP(prefix_with_application_directory_path("data/cursor-x2.bmp").c_str());
-	}
-	else
-	{
-		cursor_surface = SDL_LoadBMP(prefix_with_application_directory_path("data/cursor.bmp").c_str());
-	}
-
+	cursor_surface = SDL_LoadBMP(prefix_with_application_directory_path("data/cursor.bmp").c_str());
 	if (!cursor_surface)
 	{
 		// Load failed. Log error.
@@ -277,6 +271,12 @@ void setup_cursor()
 	{
 		SDL_FreeSurface(cursor_surface);
 
+		if (cursor != nullptr)
+		{
+			SDL_FreeCursor(cursor);
+			cursor = nullptr;
+		}
+		
 		// Create new cursor with surface
 		cursor = SDL_CreateColorCursor(formatted_surface, 0, 0);
 		SDL_FreeSurface(formatted_surface);
@@ -296,19 +296,11 @@ void setup_cursor()
 }
 #endif
 
-void amiberry_gui_init()
+void init_dispmanx_gui()
 {
-	//-------------------------------------------------
-	// Create new screen for GUI
-	//-------------------------------------------------
-	if (!gui_screen)
-	{
-		gui_screen = SDL_CreateRGBSurface(0, GUI_WIDTH, GUI_HEIGHT, 16, 0, 0, 0, 0);
-	}
-	check_error_sdl(gui_screen == nullptr, "Unable to create GUI surface:");
-
 #ifdef USE_DISPMANX
-	displayHandle = vc_dispmanx_display_open(0);
+	if (!displayHandle)
+		displayHandle = vc_dispmanx_display_open(0);
 	rgb_mode = VC_IMAGE_RGB565;
 	uint32_t vc_gui_image_ptr;
 	if (!gui_resource)
@@ -369,31 +361,103 @@ void amiberry_gui_init()
 
 		vc_dispmanx_update_submit_sync(updateHandle);
 	}
+#endif
+}
+
+void amiberry_gui_init()
+{
+	struct AmigaMonitor* mon = &AMonitors[0];
+	sdl_video_driver = SDL_GetCurrentVideoDriver();
+#ifndef USE_DISPMANX
+	SDL_GetCurrentDisplayMode(0, &sdlMode);
+#endif
+	
+	//-------------------------------------------------
+	// Create new screen for GUI
+	//-------------------------------------------------
+	if (!gui_screen)
+	{
+		gui_screen = SDL_CreateRGBSurface(0, GUI_WIDTH, GUI_HEIGHT, 16, 0, 0, 0, 0);
+		check_error_sdl(gui_screen == nullptr, "Unable to create GUI surface:");
+	}
+
+#ifdef USE_DISPMANX
+	init_dispmanx_gui();
+	
+	if (!mon->sdl_window)
+	{
+		mon->sdl_window = SDL_CreateWindow("Amiberry GUI",
+			SDL_WINDOWPOS_CENTERED,
+			SDL_WINDOWPOS_CENTERED,
+			GUI_WIDTH,
+			GUI_HEIGHT,
+			SDL_WINDOW_FULLSCREEN_DESKTOP);
+		check_error_sdl(mon->sdl_window == nullptr, "Unable to create window:");
+	}
+	if (sdl_renderer == nullptr)
+	{
+		sdl_renderer = SDL_CreateRenderer(mon->sdl_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+		check_error_sdl(sdl_renderer == nullptr, "Unable to create a renderer:");
+	}
+	SDL_RenderSetLogicalSize(sdl_renderer, GUI_WIDTH, GUI_HEIGHT);
 #else
 	setup_cursor();
 
-	if (sdl_window)
+	if (!mon->sdl_window)
+	{
+		Uint32 flags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
+		if (strcmpi(sdl_video_driver, "KMSDRM") == 0
+			|| (sdlMode.w < 800 && sdlMode.h < 600))
+			flags = SDL_WINDOW_FULLSCREEN_DESKTOP;
+
+		if (currprefs.borderless)
+			flags |= SDL_WINDOW_BORDERLESS;
+		if (currprefs.main_alwaysontop)
+			flags |= SDL_WINDOW_ALWAYS_ON_TOP;
+
+		mon->sdl_window = SDL_CreateWindow("Amiberry",
+			SDL_WINDOWPOS_CENTERED,
+			SDL_WINDOWPOS_CENTERED,
+			GUI_WIDTH,
+			GUI_HEIGHT,
+			flags);
+
+		auto* const icon_surface = IMG_Load("data/amiberry.png");
+		if (icon_surface != nullptr)
+		{
+			SDL_SetWindowIcon(mon->sdl_window, icon_surface);
+			SDL_FreeSurface(icon_surface);
+		}
+	}
+	else if (mon->sdl_window)
 	{
 		if (amiberry_options.rotation_angle != 0 && amiberry_options.rotation_angle != 180)
-			SDL_SetWindowSize(sdl_window, GUI_HEIGHT, GUI_WIDTH);
+			SDL_SetWindowSize(mon->sdl_window, GUI_HEIGHT, GUI_WIDTH);
 		else
-			SDL_SetWindowSize(sdl_window, GUI_WIDTH, GUI_HEIGHT);
+			SDL_SetWindowSize(mon->sdl_window, GUI_WIDTH, GUI_HEIGHT);		
 	}
-
+	
+	if (sdl_renderer == nullptr)
+	{
+		sdl_renderer = SDL_CreateRenderer(mon->sdl_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+		check_error_sdl(sdl_renderer == nullptr, "Unable to create a renderer:");
+	}
+	
 	// make the scaled rendering look smoother (linear scaling).
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 
-	gui_texture = SDL_CreateTexture(renderer, gui_screen->format->format, SDL_TEXTUREACCESS_STREAMING, gui_screen->w,
+	gui_texture = SDL_CreateTexture(sdl_renderer, gui_screen->format->format, SDL_TEXTUREACCESS_STREAMING, gui_screen->w,
 									gui_screen->h);
 	check_error_sdl(gui_texture == nullptr, "Unable to create GUI texture:");
-#endif
-	
+
 	if (amiberry_options.rotation_angle == 0 || amiberry_options.rotation_angle == 180)
-		SDL_RenderSetLogicalSize(renderer, GUI_WIDTH, GUI_HEIGHT);
+		SDL_RenderSetLogicalSize(sdl_renderer, GUI_WIDTH, GUI_HEIGHT);
 	else
-		SDL_RenderSetLogicalSize(renderer, GUI_HEIGHT, GUI_WIDTH);
-	
-	set_mouse_grab(false);
+		SDL_RenderSetLogicalSize(sdl_renderer, GUI_HEIGHT, GUI_WIDTH);
+#endif
+
+	SDL_SetRelativeMouseMode(SDL_FALSE);
+	SDL_ShowCursor(SDL_ENABLE);
 
 	//-------------------------------------------------
 	// Create helpers for GUI framework
@@ -401,7 +465,7 @@ void amiberry_gui_init()
 	gui_imageLoader = new gcn::SDLImageLoader();
 	// The ImageLoader in use is static and must be set to be
 	// able to load images
-	gui_imageLoader->setRenderer(renderer);
+	gui_imageLoader->setRenderer(sdl_renderer);
 	gcn::Image::setImageLoader(gui_imageLoader);
 	gui_graphics = new gcn::SDLGraphics();
 	// Set the target for the graphics object to be the screen.
@@ -416,10 +480,15 @@ void amiberry_gui_init()
 
 void amiberry_gui_halt()
 {
+	struct AmigaMonitor* mon = &AMonitors[0];
+	
 	delete uae_gui;
+	uae_gui = nullptr;
 	delete gui_imageLoader;
 	delete gui_input;
+	gui_input = nullptr;
 	delete gui_graphics;
+	gui_graphics = nullptr;
 
 	if (gui_screen != nullptr)
 	{
@@ -463,42 +532,25 @@ void amiberry_gui_halt()
 		SDL_FreeCursor(cursor);
 		cursor = nullptr;
 	}
-
+#endif	
 	// Clear the screen
-	SDL_RenderClear(renderer);
-	SDL_RenderPresent(renderer);
-#endif
-}
-
-// Return the state of a joypad axis
-// -1 (left or up), 0 (centered) or 1 (right or down)
-int get_joypad_axis_state(int axis)
-{
-	if (!gui_joystick)
-		return 0;
-
-	const auto state = SDL_JoystickGetAxis(gui_joystick, axis);
-
-	int result;
-	if (std::abs(state) < 10000)
-		result = 0;
-	else
-		result = state > 0 ? 1 : -1;
-
-	return result;
+	SDL_RenderClear(sdl_renderer);
+	SDL_RenderPresent(sdl_renderer);
 }
 
 void check_input()
 {
 	const auto key_for_gui = SDL_GetKeyFromName(currprefs.open_gui);
-	int gotEvent = 0;
+	const auto button_for_gui = SDL_GameControllerGetButtonFromString(currprefs.open_gui);
+	auto got_event = 0;
+	struct didata* did = &di_joystick[0];
 	
 	while (SDL_PollEvent(&gui_event))
 	{
 		switch (gui_event.type)
 		{
 		case SDL_QUIT:
-			gotEvent = 1;
+			got_event = 1;
 			//-------------------------------------------------
 			// Quit entire program via SQL-Quit
 			//-------------------------------------------------
@@ -510,17 +562,35 @@ void check_input()
 		case SDL_JOYBUTTONDOWN:
 			if (gui_joystick)
 			{
-				gotEvent = 1;
+				got_event = 1;
 				const int hat = SDL_JoystickGetHat(gui_joystick, 0);
-
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_up) || hat & SDL_HAT_UP) // dpad
+				
+				if (gui_event.jbutton.button == static_cast<Uint8>(button_for_gui))
+				{
+					if (emulating && cmdStart->isEnabled())
+					{
+						//------------------------------------------------
+						// Continue emulation
+						//------------------------------------------------
+						gui_running = false;
+					}
+					else
+					{
+						//------------------------------------------------
+						// First start of emulator -> reset Amiga
+						//------------------------------------------------
+						uae_reset(0, 1);
+						gui_running = false;
+					}
+				}
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_UP]) || hat & SDL_HAT_UP)
 				{
 					if (HandleNavigation(DIRECTION_UP))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_UP);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_down) || hat & SDL_HAT_DOWN) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_DOWN]) || hat & SDL_HAT_DOWN)
 				{
 					if (HandleNavigation(DIRECTION_DOWN))
 						continue; // Don't change value when enter Slider -> don't send event to control
@@ -528,14 +598,14 @@ void check_input()
 					break;
 				}
 
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].left_shoulder)) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_LEFTSHOULDER]))
 				{
 					for (auto z = 0; z < 10; ++z)
 					{
 						PushFakeKey(SDLK_UP);
 					}
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].right_shoulder)) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_RIGHTSHOULDER]))
 				{
 					for (auto z = 0; z < 10; ++z)
 					{
@@ -543,42 +613,39 @@ void check_input()
 					}
 				}
 
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_right) || hat & SDL_HAT_RIGHT)
-					// dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_RIGHT]) || hat & SDL_HAT_RIGHT)
 				{
 					if (HandleNavigation(DIRECTION_RIGHT))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_RIGHT);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].dpad_left) || hat & SDL_HAT_LEFT) // dpad
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_DPAD_LEFT]) || hat & SDL_HAT_LEFT)
 				{
 					if (HandleNavigation(DIRECTION_LEFT))
 						continue; // Don't change value when enter Slider -> don't send event to control
 					PushFakeKey(SDLK_LEFT);
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].south_button)) // need this to be X button
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_A]) ||
+					SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_B]))
 				{
 					PushFakeKey(SDLK_RETURN);
 					continue;
 				}
 
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].quit_button) &&
-					SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].hotkey_button)) // use the HOTKEY button
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.quit_button) &&
+					SDL_JoystickGetButton(gui_joystick, did->mapping.hotkey_button))
 				{
+					// use the HOTKEY button
 					uae_quit();
 					gui_running = false;
 					break;
 				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].left_trigger))
+
+				if (SDL_JoystickGetButton(gui_joystick, did->mapping.button[SDL_CONTROLLER_BUTTON_GUIDE]))
 				{
-					show_help_requested();
-					cmdHelp->requestFocus();
-					break;
-				}
-				if (SDL_JoystickGetButton(gui_joystick, host_input_buttons[0].menu_button)) // use the HOTKEY button
-				{
+					// use the HOTKEY button
 					gui_running = false;
 				}
 			}
@@ -587,59 +654,54 @@ void check_input()
 		case SDL_JOYAXISMOTION:
 			if (gui_joystick)
 			{
-				gotEvent = 1;
-				// Deadzone
-				if (std::abs(gui_event.jaxis.value) >= 10000 || std::abs(gui_event.jaxis.value) <= 5000)
+				got_event = 1;
+				if (gui_event.jaxis.axis == SDL_CONTROLLER_AXIS_LEFTX)
 				{
-					int axis_state;
-					int axis = gui_event.jaxis.axis;
-					int value = gui_event.jaxis.value;
-					if (std::abs(value) < 10000)
-						axis_state = 0;
-					else
-						axis_state = value > 0 ? 1 : -1;
-
-					if (joypad_axis_state[axis] == axis_state)
+					if (gui_event.jaxis.value > joystick_dead_zone && last_x != 1)
 					{
-						// ignore repeated axis movement state
-						break;
-					}
-					joypad_axis_state[axis] = axis_state;
-
-					if (get_joypad_axis_state(host_input_buttons[0].lstick_axis_y) == -1)
-					{
-						if (HandleNavigation(DIRECTION_UP))
-							continue; // Don't change value when enter Slider -> don't send event to control
-						PushFakeKey(SDLK_UP);
-						break;
-					}
-					if (get_joypad_axis_state(host_input_buttons[0].lstick_axis_y) == 1)
-					{
-						if (HandleNavigation(DIRECTION_DOWN))
-							continue; // Don't change value when enter Slider -> don't send event to control
-						PushFakeKey(SDLK_DOWN);
-						break;
-					}
-					if (get_joypad_axis_state(host_input_buttons[0].lstick_axis_x) == 1)
-					{
+						last_x = 1;
 						if (HandleNavigation(DIRECTION_RIGHT))
 							continue; // Don't change value when enter Slider -> don't send event to control
 						PushFakeKey(SDLK_RIGHT);
 						break;
 					}
-					if (get_joypad_axis_state(host_input_buttons[0].lstick_axis_x) == -1)
+					if (gui_event.jaxis.value < -joystick_dead_zone && last_x != -1)
 					{
+						last_x = -1;
 						if (HandleNavigation(DIRECTION_LEFT))
 							continue; // Don't change value when enter Slider -> don't send event to control
 						PushFakeKey(SDLK_LEFT);
 						break;
 					}
+					if (gui_event.jaxis.value > -joystick_dead_zone && gui_event.jaxis.value < joystick_dead_zone)
+						last_x = 0;
+				}
+				else if (gui_event.jaxis.axis == SDL_CONTROLLER_AXIS_LEFTY)
+				{
+					if (gui_event.jaxis.value < -joystick_dead_zone && last_y != -1)
+					{
+						last_y = -1;
+						if (HandleNavigation(DIRECTION_UP))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_UP);
+						break;
+					}
+					if (gui_event.jaxis.value > joystick_dead_zone && last_y != 1)
+					{
+						last_y = 1;
+						if (HandleNavigation(DIRECTION_DOWN))
+							continue; // Don't change value when enter Slider -> don't send event to control
+						PushFakeKey(SDLK_DOWN);
+						break;
+					}
+					if (gui_event.jaxis.value > -joystick_dead_zone && gui_event.jaxis.value < joystick_dead_zone)
+						last_y = 0;
 				}
 			}
 			break;
 
 		case SDL_KEYDOWN:
-			gotEvent = 1;
+			got_event = 1;
 			if (gui_event.key.keysym.sym == key_for_gui)
 			{
 				if (emulating && cmdStart->isEnabled())
@@ -723,7 +785,7 @@ void check_input()
 			break;
 
 		case SDL_FINGERDOWN:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &gui_event, sizeof gui_event);
 			touch_event.type = SDL_MOUSEBUTTONDOWN;
 			touch_event.button.which = 0;
@@ -735,7 +797,7 @@ void check_input()
 			break;
 
 		case SDL_FINGERUP:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &gui_event, sizeof gui_event);
 			touch_event.type = SDL_MOUSEBUTTONUP;
 			touch_event.button.which = 0;
@@ -747,7 +809,7 @@ void check_input()
 			break;
 
 		case SDL_FINGERMOTION:
-			gotEvent = 1;
+			got_event = 1;
 			memcpy(&touch_event, &gui_event, sizeof gui_event);
 			touch_event.type = SDL_MOUSEMOTION;
 			touch_event.motion.which = 0;
@@ -759,11 +821,12 @@ void check_input()
 
 		case SDL_KEYUP:
 		case SDL_JOYBUTTONUP:
+		case SDL_CONTROLLERBUTTONUP:
 		case SDL_MOUSEBUTTONDOWN:
 		case SDL_MOUSEBUTTONUP:
 		case SDL_MOUSEMOTION:
 		case SDL_MOUSEWHEEL:
-			gotEvent = 1;
+			got_event = 1;
 			break;
 			
 		default:
@@ -780,13 +843,13 @@ void check_input()
 #endif
 	}
 	
-	if (gotEvent)
+	if (got_event)
 	{
 		// Now we let the Gui object perform its logic.
 		uae_gui->logic();
+		SDL_RenderClear(sdl_renderer);
 		// Now we let the Gui object draw itself.
 		uae_gui->draw();
-
 		update_gui_screen();
 	}
 }
@@ -795,27 +858,25 @@ void amiberry_gui_run()
 {
 	if (amiberry_options.gui_joystick_control)
 	{
-		const auto available_joysticks = SDL_NumJoysticks();
-		if (available_joysticks > 0)
+		for (auto j = 0; j < SDL_NumJoysticks(); j++)
 		{
-			for (auto j = 0; j <= available_joysticks; j++)
-			{
-				gui_joystick = SDL_JoystickOpen(j);
-				// Some joysticks have no axes or buttons (e.g. Wii Remote IR), skip those
-				if (SDL_JoystickNumAxes(gui_joystick) > 0 && SDL_JoystickNumButtons(gui_joystick) > 0)
-				{
-					joypad_axis_state.assign(SDL_JoystickNumAxes(gui_joystick), 0);
-					break;
-				}
 
-				SDL_JoystickClose(gui_joystick);
-				gui_joystick = nullptr;
-			}
+				gui_joystick = SDL_JoystickOpen(j);
+				// Some controllers (e.g. PS4) report a second instance with only axes and no buttons.
+				// We ignore these and move on.
+				if (SDL_JoystickNumButtons(gui_joystick) < 1)
+				{
+					SDL_JoystickClose(gui_joystick);
+					continue;
+				}
+				if (gui_joystick)
+					break;
 		}
 	}
 
 	// Prepare the screen once
 	uae_gui->logic();
+	SDL_RenderClear(sdl_renderer);
 	uae_gui->draw();
 	update_gui_screen();
 	
@@ -837,14 +898,13 @@ void amiberry_gui_run()
 			currFunc();
 		}
 
-		cap_fps(start, 60);
+		cap_fps(start);
 	}
 
 	if (gui_joystick)
 	{
 		SDL_JoystickClose(gui_joystick);
 		gui_joystick = nullptr;
-		joypad_axis_state.clear();
 	}
 }
 
@@ -1128,7 +1188,9 @@ void gui_widgets_halt()
 	delete mainButtonActionListener;
 
 	delete gui_font;
+	gui_font = nullptr;
 	delete gui_top;
+	gui_top = nullptr;
 }
 
 void refresh_all_panels()
@@ -1150,12 +1212,6 @@ void disable_resume()
 
 void run_gui()
 {
-#if 0
-#ifdef ANDROID
-	SDL_ANDROID_SetScreenKeyboardShown(0);
-	SDL_ANDROID_SetSystemMousePointerVisible(1);
-#endif
-#endif
 	gui_running = true;
 	gui_rtarea_flags_onenter = gui_create_rtarea_flag(&currprefs);
 
@@ -1175,15 +1231,6 @@ void run_gui()
 		amiberry_gui_run();
 		gui_widgets_halt();
 		amiberry_gui_halt();
-#if 0
-#ifdef ANDROID
-		if (currprefs.onScreen != 0)
-		{
-			SDL_ANDROID_SetScreenKeyboardShown(1);
-			SDL_ANDROID_SetSystemMousePointerVisible(0);
-		}
-#endif
-#endif
 	}
 
 	// Catch all GUI framework exceptions.
