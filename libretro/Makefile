@@ -83,6 +83,15 @@ FLAGS += -DOSDEP_GUI_COLOR_HEADER=\"gui_color_platform_libretro.h\"
 FLAGS += -DCHD_FLAC_PLATFORM_HEADER=\"flac_platform_internal_libretro.h\"
 FLAGS += -DSOUND_PLATFORM_HEADER=\"sound_platform_internal_libretro.h\"
 
+# Treat MinGW cross builds as Windows even if platform wasn't detected.
+IS_WIN := 0
+ifeq ($(platform), win)
+IS_WIN := 1
+endif
+ifneq (,$(findstring mingw32,$(shell $(CXX) -dumpmachine 2>/dev/null)))
+IS_WIN := 1
+endif
+
 ifneq (,$(findstring aarch64,$(ARCH)))
    FLAGS += -DCPU_AARCH64
 else ifneq (,$(findstring arm,$(ARCH)))
@@ -92,6 +101,7 @@ else
 endif
 
 ifeq ($(platform), win)
+   FLAGS += -D_WIN32 -DWIN32 -D__MINGW32__ -D__MINGW64__
    ifneq ($(shell command -v x86_64-w64-mingw32-gcc 2>/dev/null),)
       CC ?= x86_64-w64-mingw32-gcc
       CXX ?= x86_64-w64-mingw32-g++
@@ -104,6 +114,10 @@ endif
 # Ensure Windows target macros are set when using MinGW, even if platform isn't detected.
 ifneq (,$(findstring mingw32,$(shell $(CXX) -dumpmachine 2>/dev/null)))
    FLAGS += -D_WIN32 -DWIN32 -D__MINGW32__ -D__MINGW64__
+endif
+
+ifeq ($(IS_WIN),1)
+FLAGS += -DUTF8PROC_STATIC
 endif
 
 # Include paths
@@ -126,6 +140,10 @@ LDFLAGS += $(ZLIB_LIBS)
 
 ifeq ($(platform), unix)
 LDFLAGS += -ldl -lm -pthread
+endif
+
+ifeq ($(IS_WIN),1)
+LDFLAGS += -lwinpthread
 endif
 
 # Source files - Core Amiga Emulation
@@ -259,13 +277,21 @@ SOURCES_OSDEP := $(LIBRETRO_DIR)/libretro.cpp \
                 $(AMIBERRY_DIR)/src/osdep/libretro/writelog.cpp \
                 $(AMIBERRY_DIR)/src/osdep/ahi_v1.cpp \
                 $(AMIBERRY_DIR)/src/osdep/ahi_v2.cpp \
-                $(AMIBERRY_DIR)/src/osdep/bsdsocket_host.cpp \
                 $(AMIBERRY_DIR)/src/osdep/fsdb_host.cpp \
                 $(AMIBERRY_DIR)/src/osdep/picasso96.cpp \
-                $(AMIBERRY_DIR)/src/osdep/sigsegv_handler.cpp \
                 $(AMIBERRY_DIR)/src/osdep/socket.cpp \
                 $(AMIBERRY_DIR)/src/sounddep/sound.cpp \
                 $(AMIBERRY_DIR)/src/threaddep/threading.cpp
+
+ifeq ($(IS_WIN),0)
+SOURCES_OSDEP += $(AMIBERRY_DIR)/src/osdep/bsdsocket_host.cpp
+SOURCES_OSDEP += $(AMIBERRY_DIR)/src/osdep/sigsegv_handler.cpp
+else
+SOURCES_OSDEP += $(AMIBERRY_DIR)/src/osdep/libretro/ethernet_stub.cpp
+SOURCES_OSDEP += $(AMIBERRY_DIR)/src/osdep/libretro/socket_stub.cpp
+SOURCES_OSDEP := $(filter-out $(AMIBERRY_DIR)/src/osdep/socket.cpp, $(SOURCES_OSDEP))
+SOURCES_CORE := $(filter-out $(AMIBERRY_DIR)/src/bsdsocket.cpp $(AMIBERRY_DIR)/src/ethernet.cpp, $(SOURCES_CORE))
+endif
 
 # CPU Emulation
 SOURCES_CPU := $(AMIBERRY_DIR)/src/newcpu.cpp \
@@ -358,17 +384,20 @@ SOURCES_ARCHIVE := $(AMIBERRY_DIR)/src/archivers/dms/crc_csum.cpp \
                   $(AMIBERRY_DIR)/src/archivers/chd/huffman.cpp \
                   $(AMIBERRY_DIR)/src/archivers/chd/md5.cpp \
                   $(AMIBERRY_DIR)/src/archivers/chd/osdcore.cpp \
-                  $(AMIBERRY_DIR)/src/archivers/chd/osdlib_unix.cpp \
                   $(AMIBERRY_DIR)/src/archivers/chd/osdsync.cpp \
                   $(AMIBERRY_DIR)/src/archivers/chd/palette.cpp \
-                  $(AMIBERRY_DIR)/src/archivers/chd/posixdir.cpp \
-                  $(AMIBERRY_DIR)/src/archivers/chd/posixfile.cpp \
-                  $(AMIBERRY_DIR)/src/archivers/chd/posixptty.cpp \
-                  $(AMIBERRY_DIR)/src/archivers/chd/posixsocket.cpp \
                   $(AMIBERRY_DIR)/src/archivers/chd/strconv.cpp \
                   $(AMIBERRY_DIR)/src/archivers/chd/strformat.cpp \
                   $(AMIBERRY_DIR)/src/archivers/chd/unicode.cpp \
                   $(AMIBERRY_DIR)/src/archivers/chd/vecstream.cpp
+
+ifeq ($(IS_WIN),0)
+SOURCES_ARCHIVE += $(AMIBERRY_DIR)/src/archivers/chd/osdlib_unix.cpp \
+                     $(AMIBERRY_DIR)/src/archivers/chd/posixdir.cpp \
+                     $(AMIBERRY_DIR)/src/archivers/chd/posixfile.cpp \
+                     $(AMIBERRY_DIR)/src/archivers/chd/posixptty.cpp \
+                     $(AMIBERRY_DIR)/src/archivers/chd/posixsocket.cpp
+endif
 
 SOURCES_7Z := $(AMIBERRY_DIR)/src/archivers/7z/7zAlloc.c \
              $(AMIBERRY_DIR)/src/archivers/7z/7zArcIn.c \
@@ -428,6 +457,12 @@ SOURCES_SLIRP := $(AMIBERRY_DIR)/src/slirp/bootp.cpp \
                 $(AMIBERRY_DIR)/src/slirp/tcp_timer.cpp \
                 $(AMIBERRY_DIR)/src/slirp/tftp.cpp \
                 $(AMIBERRY_DIR)/src/slirp/udp.cpp
+
+ifeq ($(IS_WIN),1)
+SOURCES_SLIRP :=
+SOURCES_ARCHIVE := $(filter-out $(AMIBERRY_DIR)/src/archivers/chd/%,$(SOURCES_ARCHIVE))
+SOURCES_ARCHIVE += $(AMIBERRY_DIR)/src/archivers/chd/flac.cpp
+endif
 
 # PCem
 SOURCES_PCEM := $(AMIBERRY_DIR)/src/pcem/386.cpp \

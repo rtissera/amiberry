@@ -33,6 +33,8 @@
 
 #ifndef _WIN32
 #include <dlfcn.h>
+#else
+#include <windows.h>
 #endif
 
 static float syncdivisor;

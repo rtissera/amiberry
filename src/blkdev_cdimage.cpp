@@ -17,7 +17,9 @@
 #include <sys/timeb.h>
 #endif
 #include <sys/types.h>
+#ifndef _WIN32
 #include <sys/wait.h>
+#endif
 
 #include "options.h"
 #include "blkdev.h"
@@ -36,6 +38,12 @@
 
 #include "zarchive.h"
 #include "archivers/chd/flac_platform_internal.h"
+
+#if defined(_WIN32) && !defined(LIBRETRO)
+#define UAE_SLEEP_MS(x) Sleep(x)
+#else
+#define UAE_SLEEP_MS(x) usleep((x) * 1000)
+#endif
 #if CHD_FLAC_USE_DRFLAC
 #include "dr_flac.h"
 #else
@@ -637,8 +645,12 @@ static bool cdda_play_func2 (struct cdunit *cdu, int *outpos)
 			idleframes = 0;
 			silentframes = 0;
 			foundsub = false;
+#ifdef WIN32
+			_ftime(&tb1);
+#else
 #ifdef HAVE_SYS_TIMEB_H
 			clock_gettime(CLOCK_REALTIME, &ts1);
+#endif
 #endif
 			cdda_pos = cdu->cdda_start;
 			oldplay = cdu->cdda_play;
@@ -694,12 +706,18 @@ static bool cdda_play_func2 (struct cdunit *cdu, int *outpos)
 			cdda_pos -= idleframes;
 
 			if (*outpos < 0) {
+#ifdef WIN32
+				_ftime(&tb2);
+				diff = (int)((tb2.time - tb1.time) * (uae_s64)1000 + (tb2.millitm - tb1.millitm));
+				diff -= cdu->cdda_delay;
+#else
 #ifdef HAVE_SYS_TIMEB_H
 				clock_gettime(CLOCK_REALTIME, &ts2);
 				diff = (int)(ts2.tv_sec * (uae_s64)1000 + (ts2.tv_nsec / 1000000) - (ts1.tv_sec * (uae_s64)1000 + (ts1.tv_nsec / 1000000)));
 				diff -= cdu->cdda_delay;
 #else
 				diff = 0;
+#endif
 #endif
 				if (idleframes >= 0 && diff < 0 && cdu->cdda_play > 0)
 					sleep_millis(-diff);
@@ -941,7 +959,7 @@ static int command_play (int unitnum, int startlsn, int endlsn, int scan, play_s
 	if (cdu->cdda_play) {
 		cdu->cdda_play = -1;
 		while (cdu->thread_active)
-			Sleep (10);
+			UAE_SLEEP_MS(10);
 		cdu->cdda_play = 0;
 	}
 	cdu->cd_last_pos = startlsn;
@@ -960,7 +978,7 @@ static int command_play (int unitnum, int startlsn, int endlsn, int scan, play_s
 	if (!cdu->thread_active) {
 		uae_start_thread (_T("cdimage_cdda_play"), cdda_play_func, cdu, NULL);
 		while (!cdu->thread_active)
-			Sleep (10);
+			UAE_SLEEP_MS(10);
 	}
 	cdu->cdda_play++;
 	return 1;
@@ -2473,7 +2491,7 @@ static int open_device (int unitnum, const TCHAR *ident, int flags)
 			init_comm_pipe (&unpack_pipe, 10, 1);
 			uae_start_thread (_T("cdimage_unpack"), cdda_unpack_func, NULL, NULL);
 			while (cdimage_unpack_thread == 0)
-				Sleep (10);
+				UAE_SLEEP_MS(10);
 		}
 		ret = 1;
 	}
@@ -2492,7 +2510,7 @@ static void close_device (int unitnum)
 			write_comm_pipe_u32 (&unpack_pipe, -1, 0);
 			write_comm_pipe_u32 (&unpack_pipe, -1, 1);
 			while (cdimage_unpack_thread == 0)
-				Sleep (10);
+				UAE_SLEEP_MS(10);
 			cdimage_unpack_thread = 0;
 			destroy_comm_pipe (&unpack_pipe);
 		}

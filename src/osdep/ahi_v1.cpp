@@ -20,6 +20,13 @@
 #include <algorithm>
 #include <cstring>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 #include "options.h"
 #include "audio.h"
 #include "memory.h"
@@ -497,12 +504,22 @@ uae_u32 REGPARAM2 ahi_demux (TrapContext *context)
 
 	case 111:
 	{
+#if defined(_WIN32)
+		LARGE_INTEGER freq;
+		LARGE_INTEGER counter;
+		QueryPerformanceFrequency(&freq);
+		QueryPerformanceCounter(&counter);
+		const auto time = static_cast<int64_t>(counter.QuadPart) * 1000000000LL / freq.QuadPart;
+		put_long(m68k_areg(regs, 0), static_cast<uae_u32>(time & 0xffffffff));
+		put_long(m68k_areg(regs, 0) + 4, static_cast<uae_u32>(time >> 32));
+#else
 		struct timespec ts {};
 		clock_gettime(CLOCK_MONOTONIC, &ts);
 		const auto time = static_cast<int64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;
 		put_long(m68k_areg(regs, 0), static_cast<uae_u32>(time & 0xffffffff));
 		put_long(m68k_areg(regs, 0) + 4, static_cast<uae_u32>(time >> 32));
-			}
+#endif
+	}
 	return 1;
 
 	case 200:

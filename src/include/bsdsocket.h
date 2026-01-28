@@ -13,6 +13,10 @@
 #include "uae/types.h"
 #include "thread.h"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#endif
+
 #define BSD_TRACING_ENABLED 0
 
 extern int log_bsd;

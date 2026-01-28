@@ -37,7 +37,7 @@
 #include "vpar.h"
 #include "ahi_v1.h"
 
-#ifdef POSIX_SERIAL
+#if defined(POSIX_SERIAL) && !defined(_WIN32)
 #include <termios.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -202,7 +202,7 @@ struct uaeserialdata
 #endif
 	int writeactive;
 
-	pthread_t thread;
+	uae_thread_id thread;
 	volatile int threadactive;
 	uae_sem_t evtwce, evtt, evtw, change_sem, sync_sem;
 	void *user;

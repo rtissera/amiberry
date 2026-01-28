@@ -967,7 +967,7 @@ jobs:
             platform: unix
             arch: aarch64
             artifact: amiberry_libretro.so
-          - os: windows-latest
+          - os: ubuntu-latest
             platform: win
             arch: x86_64
             artifact: amiberry_libretro.dll
@@ -999,16 +999,28 @@ jobs:
               echo "ZLIB_CFLAGS=-I${ZLIB_PREFIX}/include" >> "$GITHUB_ENV"
               echo "ZLIB_LIBS=${ZLIB_PREFIX}/lib/libz.a" >> "$GITHUB_ENV"
             fi
+          elif [ "${{ matrix.platform }}" = "win" ]; then
+            sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 binutils-mingw-w64-x86-64
+            ZLIB_PREFIX="${RUNNER_TEMP}/zlib-mingw"
+            curl -L https://zlib.net/zlib-1.3.1.tar.gz | tar xz -C "${RUNNER_TEMP}"
+            pushd "${RUNNER_TEMP}/zlib-1.3.1"
+            CC=x86_64-w64-mingw32-gcc AR=x86_64-w64-mingw32-ar RANLIB=x86_64-w64-mingw32-ranlib \
+              ./configure --static --prefix="${ZLIB_PREFIX}"
+            make -j$(nproc)
+            make install
+            popd
+            echo "ZLIB_CFLAGS=-I${ZLIB_PREFIX}/include" >> "$GITHUB_ENV"
+            echo "ZLIB_LIBS=${ZLIB_PREFIX}/lib/libz.a" >> "$GITHUB_ENV"
           fi
 
       - name: Build Libretro Core
         shell: bash
         run: |
           cd amiberry/libretro
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            make platform=${{ matrix.platform }} ARCH=${{ matrix.arch }} -j$(nproc)
-          elif [ "${{ matrix.arch }}" = "aarch64" ]; then
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
             make platform=${{ matrix.platform }} ARCH=${{ matrix.arch }} CROSS_COMPILE=aarch64-linux-gnu- CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ ZLIB_CFLAGS="${ZLIB_CFLAGS}" ZLIB_LIBS="${ZLIB_LIBS}" -j$(nproc)
+          elif [ "${{ matrix.platform }}" = "win" ]; then
+            make platform=${{ matrix.platform }} ARCH=${{ matrix.arch }} CROSS_COMPILE=x86_64-w64-mingw32- CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ ZLIB_CFLAGS="${ZLIB_CFLAGS}" ZLIB_LIBS="${ZLIB_LIBS}" -j$(nproc)
           else
             make platform=${{ matrix.platform }} ARCH=${{ matrix.arch }} -j$(nproc)
           fi

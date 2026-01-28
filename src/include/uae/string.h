@@ -19,6 +19,8 @@
 #include <tchar.h>
 #include <wchar.h>
 #include <stdlib.h>
+#define uaetcslen _tcslen
+#define uaestrlen strlen
 #endif
 
 #ifdef _WIN32

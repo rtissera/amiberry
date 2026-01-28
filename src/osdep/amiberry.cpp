@@ -18,6 +18,13 @@
 #include <fstream>
 #include <filesystem>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 #include "sysdeps.h"
 #include "options.h"
 #include "audio.h"
@@ -316,9 +323,11 @@ static void set_key_configs(const uae_prefs* p)
 	}
 }
 
+#if defined(CPU_arm) && !defined(_WIN32)
 extern void signal_segv(int signum, siginfo_t* info, void* ptr);
 extern void signal_buserror(int signum, siginfo_t* info, void* ptr);
 extern void signal_term(int signum, siginfo_t* info, void* ptr);
+#endif
 
 extern void set_last_active_config(const char* filename);
 
@@ -331,7 +340,9 @@ std::string current_dir;
 #ifdef __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
 #endif
+#if !defined(_WIN32)
 #include <sys/ioctl.h>
+#endif
 unsigned char kbd_led_status;
 char kbd_flags;
 
@@ -545,13 +556,21 @@ int target_sleep_nanos(int us)
 	struct timespec req;
 	req.tv_sec = us / 1000000;
 	req.tv_nsec = (us % 1000000) * 1000;
+#if defined(_WIN32)
+	Sleep((us + 999) / 1000);
+#else
 	nanosleep(&req, nullptr);
+#endif
 	return 0;
 }
 
 void sleep_micros(const int ms)
 {
+#if defined(_WIN32)
+	Sleep((ms + 999) / 1000);
+#else
 	usleep(ms);
+#endif
 }
 
 int sleep_millis_main(const int ms)
@@ -1474,7 +1493,7 @@ static void getsizemove(AmigaMonitor* mon)
 	mon->ratio_sizing = state[SDL_SCANCODE_LCTRL] || state[SDL_SCANCODE_RCTRL];
 }
 
-static int setsizemove(AmigaMonitor* mon, HWND hWnd)
+static int setsizemove(AmigaMonitor* mon, SDL_Window* hWnd)
 {
 	if (isfullscreen() > 0)
 		return 0;
@@ -2275,7 +2294,11 @@ void fullpath(TCHAR* path, int size, bool userelative)
 	// Resolve absolute path
 	TCHAR tmp1[MAX_DPATH];
 	tmp1[0] = 0;
+#ifdef _WIN32
+	if (_fullpath(tmp1, path, MAX_DPATH) != nullptr)
+#else
 	if (realpath(path, tmp1) != nullptr)
+#endif
 	{
 		if (_tcsnicmp(path, tmp1, _tcslen(tmp1)) != 0)
 			_tcscpy(path, tmp1);
@@ -4872,11 +4895,21 @@ uae_u32 emulib_target_getcpurate(const uae_u32 v, uae_u32* low)
 	}
 	if (v == 2)
 	{
+#if defined(_WIN32)
+		LARGE_INTEGER freq;
+		LARGE_INTEGER counter;
+		QueryPerformanceFrequency(&freq);
+		QueryPerformanceCounter(&counter);
+		const auto time = static_cast<int64_t>(counter.QuadPart) * 1000000000LL / freq.QuadPart;
+		*low = static_cast<uae_u32>(time & 0xffffffff);
+		return static_cast<uae_u32>(time >> 32);
+#else
 		timespec ts{};
 		clock_gettime(CLOCK_MONOTONIC, &ts);
 		const auto time = static_cast<int64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;
 		*low = static_cast<uae_u32>(time & 0xffffffff);
 		return static_cast<uae_u32>(time >> 32);
+#endif
 	}
 	return 0;
 }
@@ -4897,8 +4930,10 @@ struct winuae	//this struct is put in a6 if you call
 void* uaenative_get_uaevar()
 {
 	static winuae uaevar;
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
 	uaevar.amigawnd = mon->hAmigaWnd;
+#else
+	uaevar.amigawnd = nullptr;
 #endif
 	// WARNING: not 64-bit safe!
 	uaevar.z3offset = static_cast<uae_u32>(reinterpret_cast<uae_u64>(get_real_address(z3fastmem_bank[0].start))) - z3fastmem_bank[0].start;
@@ -5043,7 +5078,9 @@ int amiberry_main(int argc, char* argv[])
 			usage();
 	}
 
+#if defined(CPU_arm) && !defined(_WIN32)
 	struct sigaction action{};
+#endif
 	mainthreadid = uae_thread_get_id(nullptr);
 
 	if(argc == 2)
@@ -5108,7 +5145,7 @@ int amiberry_main(int argc, char* argv[])
 	}
 
 	logging_init();
-#if defined (CPU_arm)
+#if defined(CPU_arm) && !defined(_WIN32)
 	memset(&action, 0, sizeof action);
 	action.sa_sigaction = signal_segv;
 	action.sa_flags = SA_SIGINFO;

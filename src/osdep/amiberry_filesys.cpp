@@ -20,9 +20,18 @@
 #include <algorithm>
 #include <list>
 #include <dirent.h>
+#ifndef _WIN32
 #include <iconv.h>
+#endif
 #include <iostream>
 #include <mutex>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <io.h>
+#endif
 
 #ifdef USE_OLDGCC
 #include <experimental/filesystem>
@@ -33,7 +42,9 @@ namespace fs = std::filesystem;
 #endif
 
 #include <set>
+#ifndef _WIN32
 #include <sys/mman.h>
+#endif
 
 #include "crc32.h"
 #include "fsdb_host.h"
@@ -56,6 +67,10 @@ struct my_openfile_s {
 static bool has_logged_iconv_fail = false;
 [[nodiscard]] bool utf8_to_latin1_string(const std::string_view input, std::string& output)
 {
+#ifdef _WIN32
+    output.assign(input.begin(), input.end());
+    return true;
+#else
     // Fast path for empty input
     if (input.empty()) {
         output.clear();
@@ -181,6 +196,7 @@ static bool has_logged_iconv_fail = false;
     }
 
     return invalid_chars == 0;
+#endif
 }
 
 [[nodiscard]] std::string iso_8859_1_to_utf8(std::string_view str) noexcept
@@ -429,9 +445,17 @@ std::string prefix_with_data_path(const std::string& filename)
 [[nodiscard]] static time_t get_local_time_offset(time_t t)
 {
 	struct tm lt{};
+	#ifdef _WIN32
+	localtime_s(&lt, &t);
+	#else
 	localtime_r(&t, &lt);
+	#endif
 	struct tm gt{};
+	#ifdef _WIN32
+	gmtime_s(&gt, &t);
+	#else
 	gmtime_r(&t, &gt);
+	#endif
 	gt.tm_isdst = lt.tm_isdst;
 	return t - mktime(&gt);
 }
@@ -575,13 +599,13 @@ bool my_existslink(const char* name)
 		return false;
 	}
 
-	struct stat st{};
-	if (lstat(name, &st) != 0) {
-		write_log("my_existslink: lstat on file %s failed: %s\n", name, strerror(errno));
+	std::error_code ec;
+	const bool is_link = fs::is_symlink(fs::path(name), ec);
+	if (ec) {
+		write_log("my_existslink: is_symlink on file %s failed: %s\n", name, ec.message().c_str());
 		return false;
 	}
-
-	return S_ISLNK(st.st_mode);
+	return is_link;
 }
 
 bool my_existsfile2(const char* name)
@@ -627,13 +651,14 @@ int my_getvolumeinfo(const char* root)
 		return -1;
 	}
 
-	struct stat st{};
-	if (lstat(root, &st) != 0) {
-		write_log("my_getvolumeinfo: lstat on file %s failed: %s\n", root, strerror(errno));
+	std::error_code ec;
+	const auto st = fs::status(fs::path(root), ec);
+	if (ec) {
+		write_log("my_getvolumeinfo: status on %s failed: %s\n", root, ec.message().c_str());
 		return -1;
 	}
 
-	if (!S_ISDIR(st.st_mode)) {
+	if (!fs::is_directory(st)) {
 		write_log("my_getvolumeinfo: %s is not a directory\n", root);
 		return -2;
 	}
@@ -798,7 +823,11 @@ unsigned int my_read(struct my_openfile_s* mos, void* b, unsigned int size)
 		}
 
 		// Create the actual directory with proper permissions
+#ifdef _WIN32
+		if (mkdir(utf8_path.c_str()) != 0) {
+#else
 		if (mkdir(utf8_path.c_str(), 0755) != 0) {
+#endif
 			write_log("my_mkdir: mkdir on path %s failed: %s\n",
 				path, strerror(errno));
 			return -1;
@@ -939,15 +968,12 @@ unsigned int my_read(struct my_openfile_s* mos, void* b, unsigned int size)
 		}
 
 #ifdef _WIN32
-		// On Windows, check the file attributes
-		std::error_code ec;
-		const auto attrs = fs::status(filepath, ec).permissions();
-		if (ec) {
-			write_log("my_isfilehidden: failed to get attributes for %s: %s\n",
-				path, ec.message().c_str());
+		const DWORD attrs = GetFileAttributesA(path);
+		if (attrs == INVALID_FILE_ATTRIBUTES) {
+			write_log("my_isfilehidden: GetFileAttributes failed for %s\n", path);
 			return false;
 		}
-		return (attrs & fs::perms::hidden) != fs::perms::none;
+		return (attrs & FILE_ATTRIBUTE_HIDDEN) != 0;
 #else
 		// On Unix-like systems, check if filename starts with '.'
 		const std::string filename = filepath.filename().string();
@@ -1729,6 +1755,22 @@ std::string my_get_sha1_of_file(const char* filepath)
             return get_sha1_txt(nullptr, 0);
         }
 
+#ifdef _WIN32
+        std::vector<char> buffer(static_cast<size_t>(sb.st_size));
+        size_t total_read = 0;
+        while (total_read < static_cast<size_t>(sb.st_size)) {
+            const int chunk = read(file.fd, buffer.data() + total_read,
+                                   static_cast<unsigned int>(sb.st_size - total_read));
+            if (chunk <= 0) {
+                write_log("my_get_sha1_of_file: read on file '%s' failed: %s\n",
+                         filepath, strerror(errno));
+                return "";
+            }
+            total_read += static_cast<size_t>(chunk);
+        }
+
+        const TCHAR* sha1 = get_sha1_txt(buffer.data(), sb.st_size);
+#else
         // Use RAII for memory mapping
         struct MappedMemory {
             void* mem = MAP_FAILED;
@@ -1753,6 +1795,7 @@ std::string my_get_sha1_of_file(const char* filepath)
 
         // Calculate SHA1
         const TCHAR* sha1 = get_sha1_txt(mapping.mem, sb.st_size);
+#endif
         if (!sha1) {
             write_log("my_get_sha1_of_file: SHA1 calculation failed for '%s'\n", filepath);
             return "";

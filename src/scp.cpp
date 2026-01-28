@@ -15,6 +15,7 @@
 #include "zfile.h"
 #include "uae/endian.h"
 
+#include <algorithm>
 #include <stdint.h>
 #if defined __MACH__
 #include <machine/endian.h>
@@ -107,7 +108,7 @@ int scp_open(struct zfile *zf, int drv, int *num_tracks)
     }
 
     d->zf = zf;
-    d->revs = min((int)header[5], MAX_REVS);
+    d->revs = std::min((int)header[5], MAX_REVS);
 	*num_tracks = header[7] + 1;
 
     return 1;
@@ -259,7 +260,7 @@ static int flux_next_bit(struct scpdrive *d)
 
         /* Clamp the clock's adjustment range. */
         d->clock = max(CLOCK_MIN(d->clock_centre),
-                          min(CLOCK_MAX(d->clock_centre), d->clock));
+                          std::min(CLOCK_MAX(d->clock_centre), d->clock));
     } else {
         d->clock = d->clock_centre;
     }

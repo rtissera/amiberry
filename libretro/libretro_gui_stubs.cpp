@@ -1,5 +1,6 @@
 #include "sdl_compat.h"
 #include "vkbd/vkbd.h"
+#include "sysdeps.h"
 
 int TTF_Init(void)
 {
@@ -82,5 +83,13 @@ bool vkbd_is_active(void)
 }
 
 void vkbd_update_position_from_texture()
+{
+}
+
+void update_disassembly(uae_u32)
+{
+}
+
+void update_memdump(uae_u32)
 {
 }

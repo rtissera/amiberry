@@ -13,11 +13,18 @@
 #include "cpuboard.h"
 #include "rommgr.h"
 #include "newcpu.h"
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <sys/mman.h>
+#endif
 
 #include "gui.h"
 #include "sys/types.h"
-#ifndef __MACH__
+#if !defined(__MACH__) && !defined(_WIN32)
 #include "sys/sysinfo.h"
 #endif
 
@@ -31,18 +38,39 @@ static int os_64bit = 1;
 static int os_64bit = 0;
 #endif
 
+#ifndef MEM_COMMIT
 #define MEM_COMMIT       0x00001000
+#endif
+#ifndef MEM_RESERVE
 #define MEM_RESERVE      0x00002000
+#endif
+#ifndef MEM_DECOMMIT
 #define MEM_DECOMMIT         0x4000
+#endif
+#ifndef MEM_RELEASE
 #define MEM_RELEASE          0x8000
+#endif
+#ifndef MEM_WRITE_WATCH
 #define MEM_WRITE_WATCH  0x00200000
+#endif
+#ifndef MEM_TOP_DOWN
 #define MEM_TOP_DOWN     0x00100000
+#endif
 
+#ifndef PAGE_EXECUTE_READWRITE
 #define PAGE_EXECUTE_READWRITE 0x40
+#endif
+#ifndef PAGE_NOACCESS
 #define PAGE_NOACCESS          0x01
+#endif
+#ifndef PAGE_READONLY
 #define PAGE_READONLY          0x02
+#endif
+#ifndef PAGE_READWRITE
 #define PAGE_READWRITE         0x04
+#endif
 
+#ifndef _WIN32
 typedef void* LPVOID;
 typedef size_t SIZE_T;
 
@@ -54,6 +82,7 @@ static void GetSystemInfo(SYSTEM_INFO* si)
 {
 	si->dwPageSize = sysconf(_SC_PAGESIZE);
 }
+#endif
 
 #define USE_MMAP
 
@@ -63,7 +92,7 @@ static void GetSystemInfo(SYSTEM_INFO* si)
 #endif
 #endif
 
-static void* VirtualAlloc(void* lpAddress, size_t dwSize, int flAllocationType,
+static void* uae_VirtualAlloc(void* lpAddress, size_t dwSize, int flAllocationType,
 	int flProtect)
 {
 	write_log("- VirtualAlloc addr=%p size=%zu type=%d prot=%d\n",
@@ -142,7 +171,7 @@ static int VirtualProtect(void* lpAddress, int dwSize, int flNewProtect,
 	return 1;
 }
 
-static bool VirtualFree(void* lpAddress, size_t dwSize, int dwFreeType)
+static bool uae_VirtualFree(void* lpAddress, size_t dwSize, int dwFreeType)
 {
 	if (dwFreeType == MEM_DECOMMIT) {
 		return uae_vm_decommit(lpAddress, dwSize);
@@ -153,7 +182,7 @@ static bool VirtualFree(void* lpAddress, size_t dwSize, int dwFreeType)
 	return false;
 }
 
-static int GetLastError()
+static int uae_GetLastError()
 {
 	return errno;
 }
@@ -210,12 +239,12 @@ bool can_have_1gb()
 
 static uae_u8 *virtualallocwithlock (LPVOID addr, SIZE_T size, unsigned int allocationtype, unsigned int protect)
 {
-	auto p = static_cast<uae_u8*>(VirtualAlloc(addr, size, allocationtype, protect));
+	auto p = static_cast<uae_u8*>(uae_VirtualAlloc(addr, size, allocationtype, protect));
 	return p;
 }
 static void virtualfreewithlock (LPVOID addr, SIZE_T size, unsigned int freetype)
 {
-	VirtualFree(addr, size, freetype);
+	uae_VirtualFree(addr, size, freetype);
 }
 
 static uae_u32 lowmem ()
@@ -241,12 +270,11 @@ bool preinit_shm ()
 	uae_u64 totalphys64;
 #ifdef _WIN32
 	MEMORYSTATUS memstats;
-	GLOBALMEMORYSTATUSEX pGlobalMemoryStatusEx;
 	MEMORYSTATUSEX memstatsex;
 #endif
 
 	if (natmem_reserved)
-		VirtualFree (natmem_reserved, 0, MEM_RELEASE);
+		uae_VirtualFree(natmem_reserved, 0, MEM_RELEASE);
 
 	natmem_reserved = nullptr;
 	natmem_offset = nullptr;
@@ -264,17 +292,10 @@ bool preinit_shm ()
 	GlobalMemoryStatus(&memstats);
 	totalphys64 = memstats.dwTotalPhys;
 	total64 = (uae_u64)memstats.dwAvailPageFile + (uae_u64)memstats.dwTotalPhys;
-#ifdef AMIBERRY
-	pGlobalMemoryStatusEx = GlobalMemoryStatusEx;
-#else
-	pGlobalMemoryStatusEx = (GLOBALMEMORYSTATUSEX)GetProcAddress (GetModuleHandle (_T("kernel32.dll")), "GlobalMemoryStatusEx");
-#endif
-	if (pGlobalMemoryStatusEx) {
-		memstatsex.dwLength = sizeof (MEMORYSTATUSEX);
-		if (pGlobalMemoryStatusEx(&memstatsex)) {
-			totalphys64 = memstatsex.ullTotalPhys;
-			total64 = memstatsex.ullAvailPageFile + memstatsex.ullTotalPhys;
-		}
+	memstatsex.dwLength = sizeof(memstatsex);
+	if (GlobalMemoryStatusEx(&memstatsex)) {
+		totalphys64 = memstatsex.ullTotalPhys;
+		total64 = memstatsex.ullAvailPageFile + memstatsex.ullTotalPhys;
 	}
 #else
 #ifdef AMIBERRY
@@ -341,7 +362,7 @@ bool preinit_shm ()
 		if (natmem_size <= 768 * 1024 * 1024) {
 			uae_u32 p = 0x78000000 - natmem_size;
 			for (;;) {
-				natmem_reserved = static_cast<uae_u8*>(VirtualAlloc(reinterpret_cast<void*>(static_cast<intptr_t>(p)), natmem_size, MEM_RESERVE | MEM_WRITE_WATCH, PAGE_READWRITE));
+				natmem_reserved = static_cast<uae_u8*>(uae_VirtualAlloc(reinterpret_cast<void*>(static_cast<intptr_t>(p)), natmem_size, MEM_RESERVE | MEM_WRITE_WATCH, PAGE_READWRITE));
 				if (natmem_reserved)
 					break;
 				p -= 128 * 1024 * 1024;
@@ -353,14 +374,14 @@ bool preinit_shm ()
 	if (!natmem_reserved) {
 		unsigned int vaflags = MEM_RESERVE | MEM_WRITE_WATCH;
 		for (;;) {
-			natmem_reserved = static_cast<uae_u8*>(VirtualAlloc(nullptr, natmem_size, vaflags, PAGE_READWRITE));
+			natmem_reserved = static_cast<uae_u8*>(uae_VirtualAlloc(nullptr, natmem_size, vaflags, PAGE_READWRITE));
 			if (natmem_reserved)
 				break;
 			natmem_size -= 64 * 1024 * 1024;
 			if (!natmem_size) {
 				write_log (_T("MMAN: Can't allocate 257M of virtual address space!?\n"));
 				natmem_size = 17 * 1024 * 1024;
-				natmem_reserved = static_cast<uae_u8*>(VirtualAlloc(nullptr, natmem_size, vaflags, PAGE_READWRITE));
+				natmem_reserved = static_cast<uae_u8*>(uae_VirtualAlloc(nullptr, natmem_size, vaflags, PAGE_READWRITE));
 				if (!natmem_size) {
 					write_log (_T("MMAN: Can't allocate 17M of virtual address space!? Something is seriously wrong\n"));
 					notify_user(NUMSG_NOMEMORY);
@@ -406,11 +427,11 @@ static void resetmem (bool decommit)
 			continue;
 		uae_u8* shmaddr = natmem_offset + (static_cast<uae_u8*>(s->attached) - static_cast<uae_u8*>(s->natmembase));
 		if (decommit) {
-			VirtualFree (shmaddr, size, MEM_DECOMMIT);
+			uae_VirtualFree(shmaddr, size, MEM_DECOMMIT);
 		} else {
 			const uae_u8* result = virtualallocwithlock(shmaddr, size, decommit ? MEM_DECOMMIT : MEM_COMMIT, PAGE_READWRITE);
 			if (result != shmaddr)
-				write_log (_T("MMAN: realloc(%p-%p,%d,%d,%s) failed, err=%d\n"), shmaddr, shmaddr + size, size, s->mode, s->name, GetLastError ());
+				write_log (_T("MMAN: realloc(%p-%p,%d,%d,%s) failed, err=%d\n"), shmaddr, shmaddr + size, size, s->mode, s->name, uae_GetLastError());
 			else
 				write_log (_T("MMAN: rellocated(%p-%p,%d,%s)\n"), shmaddr, shmaddr + size, size, s->name);
 		}
@@ -419,14 +440,14 @@ static void resetmem (bool decommit)
 
 static uae_u8 *va (uae_u32 offset, uae_u32 len, unsigned int alloc, unsigned int protect)
 {
-	auto* addr = static_cast<uae_u8*>(VirtualAlloc(natmem_offset + offset, len, alloc, protect));
+	auto* addr = static_cast<uae_u8*>(uae_VirtualAlloc(natmem_offset + offset, len, alloc, protect));
 	if (addr) {
 		write_log (_T("VA(%p - %p, %4uM, %s)\n"),
 			natmem_offset + offset, natmem_offset + offset + len, len >> 20, (alloc & MEM_WRITE_WATCH) ? _T("WATCH") : _T("RESERVED"));
 		return addr;
 	}
 	write_log (_T("VA(%p - %p, %4uM, %s) failed %d\n"),
-		natmem_offset + offset, natmem_offset + offset + len, len >> 20, (alloc & MEM_WRITE_WATCH) ? _T("WATCH") : _T("RESERVED"), GetLastError ());
+		natmem_offset + offset, natmem_offset + offset + len, len >> 20, (alloc & MEM_WRITE_WATCH) ? _T("WATCH") : _T("RESERVED"), uae_GetLastError());
 	return nullptr;
 }
 
@@ -568,7 +589,7 @@ static int doinit_shm ()
 	}
 
 	if (!natmem_offset) {
-		write_log (_T("MMAN: No special area could be allocated! err=%d\n"), GetLastError ());
+		write_log (_T("MMAN: No special area could be allocated! err=%d\n"), uae_GetLastError());
 	} else {
 		write_log(_T("MMAN: Our special area: %p-%p (0x%08x %dM)\n"),
 			natmem_offset, natmem_offset + totalsize,
@@ -1036,7 +1057,7 @@ void *uae_shmat (addrbank *ab, int shmid, void *shmaddr, int shmflg, struct uae_
 			error_log (_T("Memory %s (%s) failed to allocate %p: VA %08X - %08X %x (%dk). Error %d."),
 				shmids[shmid].name, ab ? ab->name : _T("?"), shmaddr,
 				static_cast<uae_u8*>(shmaddr) - natmem_offset, static_cast<uae_u8*>(shmaddr) - natmem_offset + size,
-				size, size >> 10, GetLastError ());
+				size, size >> 10, uae_GetLastError());
 		} else {
 			shmids[shmid].attached = result;
 			write_log (_T("%p: VA %08lX - %08lX %x (%dk) ok (%p)%s\n"),
@@ -1063,7 +1084,7 @@ void unprotect_maprom()
 		if (!VirtualProtect (shm->attached, shm->rosize, protect ? PAGE_READONLY : PAGE_READWRITE, &old)) {
 			write_log (_T("unprotect_maprom VP %08lX - %08lX %x (%dk) failed %d\n"),
 				static_cast<uae_u8*>(shm->attached) - natmem_offset, static_cast<uae_u8*>(shm->attached) - natmem_offset + shm->size,
-				shm->size, shm->size >> 10, GetLastError ());
+				shm->size, shm->size >> 10, uae_GetLastError());
 		}
 	}
 }
@@ -1087,7 +1108,7 @@ void protect_roms(bool protect)
 		if (!VirtualProtect (shm->attached, shm->rosize, protect ? PAGE_READONLY : PAGE_READWRITE, &old)) {
 			write_log (_T("protect_roms VP %08lX - %08lX %x (%dk) failed %d\n"),
 				static_cast<uae_u8*>(shm->attached) - natmem_offset, static_cast<uae_u8*>(shm->attached) - natmem_offset + shm->rosize,
-				shm->rosize, shm->rosize >> 10, GetLastError ());
+				shm->rosize, shm->rosize >> 10, uae_GetLastError());
 		} else {
 			write_log(_T("ROM VP %08lX - %08lX %x (%dk) %s\n"),
 				static_cast<uae_u8*>(shm->attached) - natmem_offset, static_cast<uae_u8*>(shm->attached) - natmem_offset + shm->rosize,
@@ -1181,7 +1202,7 @@ int uae_shmctl (int shmid, int cmd, struct uae_shmid_ds *buf)
 			result = 0;
 			break;
 		case UAE_IPC_RMID:
-			VirtualFree (shmids[shmid].attached, shmids[shmid].size, MEM_DECOMMIT);
+			uae_VirtualFree(shmids[shmid].attached, shmids[shmid].size, MEM_DECOMMIT);
 			shmids[shmid].key = -1;
 			shmids[shmid].name[0] = '\0';
 			shmids[shmid].size = 0;

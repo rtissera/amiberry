@@ -256,11 +256,11 @@ static bool fp_unset_snan(fpdata *fpd)
 }
 static bool fp_is_nan(fpdata *fpd)
 {
-    return isnan(fpd->fp) != 0;
+    return std::isnan(fpd->fp) != 0;
 }
 static bool fp_is_infinity(fpdata *fpd)
 {
-    return isinf(fpd->fp) != 0;
+    return std::isinf(fpd->fp) != 0;
 }
 static bool fp_is_zero(fpdata *fpd)
 {
@@ -268,7 +268,7 @@ static bool fp_is_zero(fpdata *fpd)
 }
 static bool fp_is_neg(fpdata *fpd)
 {
-    return signbit(fpd->fp) != 0;
+    return std::signbit(fpd->fp) != 0;
 }
 static bool fp_is_denormal(fpdata *fpd)
 {
@@ -443,7 +443,7 @@ static void fp_from_exten(fpdata *fpd, uae_u32 *wrd1, uae_u32 *wrd2, uae_u32 *wr
 		fptype v;
     
 		if (fp_is_zero(fpd)) {
-			*wrd1 = signbit(fpd->fp) ? 0x80000000 : 0;
+                *wrd1 = std::signbit(fpd->fp) ? 0x80000000 : 0;
 			*wrd2 = 0;
 			*wrd3 = 0;
 			return;
@@ -476,7 +476,7 @@ static void fp_from_exten(fpdata *fpd, uae_u32 *wrd1, uae_u32 *wrd2, uae_u32 *wr
 	fptype v;
 
 	if (fp_is_zero(fpd)) {
-		*wrd1 = signbit(fpd->fp) ? 0x80000000 : 0;
+		*wrd1 = std::signbit(fpd->fp) ? 0x80000000 : 0;
 		*wrd2 = 0;
 		*wrd3 = 0;
 		return;
@@ -632,11 +632,11 @@ static const TCHAR *fp_print(fpdata *fpd, int mode)
 		return fsout;
 	}
 
-	n = signbit(fpd->fp) ? 1 : 0;
+        n = std::signbit(fpd->fp) ? 1 : 0;
 
-	if(isinf(fpd->fp)) {
+        if (std::isinf(fpd->fp)) {
 		_sntprintf(fsout, sizeof fsout, _T("%c%s"), n ? '-' : '+', _T("inf"));
-	} else if(isnan(fpd->fp)) {
+        } else if (std::isnan(fpd->fp)) {
 		_sntprintf(fsout, sizeof fsout, _T("%c%s"), n ? '-' : '+', _T("nan"));
 	} else {
 #ifdef USE_LONG_DOUBLE

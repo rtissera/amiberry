@@ -3254,7 +3254,7 @@ int disk_setwriteprotect (struct uae_prefs *p, int num, const TCHAR *fname_in, b
 			if (!_tcscmp (fname_in, floppy[i].newname))
 				drive_eject (&floppy[i]);
 		}
-		_wunlink (name2);
+		unlink(name2);
 	}
 
 	if (!needwritefile)

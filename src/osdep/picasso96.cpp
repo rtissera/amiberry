@@ -80,6 +80,12 @@
 #include "devices.h"
 #include "statusline.h"
 
+#if defined(_WIN32) && !defined(LIBRETRO)
+#define P96_WIN32 1
+#else
+#define P96_WIN32 0
+#endif
+
 int debug_rtg_blitter = 3;
 
 #define NOBLITTER (0 || !(debug_rtg_blitter & 1))
@@ -94,7 +100,7 @@ static int picasso96_BT = BT_uaegfx;
 static int picasso96_GCT = GCT_Unknown;
 static int picasso96_PCT = PCT_Unknown;
 
-#ifdef _WIN32
+#if P96_WIN32
 int mman_GetWriteWatch (PVOID lpBaseAddress, SIZE_T dwRegionSize, PVOID *lpAddresses, PULONG_PTR lpdwCount, PULONG lpdwGranularity);
 void mman_ResetWatch (PVOID lpBaseAddress, SIZE_T dwRegionSize);
 #else
@@ -177,7 +183,7 @@ static uae_u8 *cursordata;
 static uae_u32 cursorrgb[4], cursorrgbn[4];
 static int cursordeactivate, setupcursor_needed;
 static bool cursorvisible;
-#ifdef _WIN32
+#if P96_WIN32
 static HCURSOR wincursor;
 #else
 SDL_Cursor* p96_cursor;
@@ -254,7 +260,7 @@ extern int rtg_index;
 void lockrtg()
 {
 	if (currprefs.rtg_multithread && render_tid && render_cs)
-#ifdef _WIN32
+#if P96_WIN32
 		EnterCriticalSection(&render_cs);
 #else
 		uae_sem_wait(&render_cs);
@@ -264,7 +270,7 @@ void lockrtg()
 void unlockrtg()
 {
 	if (currprefs.rtg_multithread && render_tid && render_cs)
-#ifdef _WIN32
+#if P96_WIN32
 		LeaveCriticalSection(&render_cs);
 #else
 		uae_sem_post(&render_cs);
@@ -432,7 +438,7 @@ static void **gwwbuf[MAX_RTG_BOARDS];
 static int gwwbufsize[MAX_RTG_BOARDS], gwwpagesize[MAX_RTG_BOARDS], gwwpagemask[MAX_RTG_BOARDS];
 extern uae_u8 *natmem_offset;
 
-#ifndef _WIN32
+#if !P96_WIN32
 static void mark_dirty(int index, uae_u8* addr, int size)
 {
 	if (index < 0 || !dirty_page_map[index])
@@ -835,7 +841,7 @@ static void do_fillrect_frame_buffer(const struct RenderInfo *ri, int X, int Y, 
 	default:
 		break;
 	}
-#ifndef _WIN32
+#if !P96_WIN32
 	mark_dirty(rtg_index, ri->Memory + Y * bpr + X * Bpp, Height * bpr);
 #endif
 }
@@ -1092,7 +1098,7 @@ static void rtg_render()
 	struct amigadisplay *ad = &adisplays[monid];
 	bool full = false;
 
-#ifdef _WIN32
+#if P96_WIN32
 	if (D3D_restore)
 		D3D_restore(monid, true);
 #endif
@@ -2835,7 +2841,7 @@ static void CopyLibResolutionStructureU2A(TrapContext *ctx, const struct LibReso
 
 void picasso_allocatewritewatch (int index, int gfxmemsize)
 {
-#ifdef _WIN32
+#if P96_WIN32
 	SYSTEM_INFO si;
 
 	xfree (gwwbuf[index]);
@@ -2864,13 +2870,13 @@ void picasso_allocatewritewatch (int index, int gfxmemsize)
 #endif
 }
 
-#ifdef _WIN32
+#if P96_WIN32
 static ULONG_PTR writewatchcount[MAX_RTG_BOARDS];
 static int watch_offset[MAX_RTG_BOARDS];
 #endif
 int picasso_getwritewatch (int index, int offset, uae_u8 ***gwwbufp, uae_u8 **startp)
 {
-#ifdef _WIN32
+#if P96_WIN32
 	ULONG ps;
 	writewatchcount[index] = gwwbufsize[index];
 	watch_offset[index] = offset;
@@ -2928,7 +2934,7 @@ int picasso_getwritewatch (int index, int offset, uae_u8 ***gwwbufp, uae_u8 **st
 }
 bool picasso_is_vram_dirty (int index, uaecptr addr, int size)
 {
-#ifdef _WIN32
+#if P96_WIN32
 	static ULONG_PTR last;
 	uae_u8 *a = addr + natmem_offset + watch_offset[index];
 	int s = size;
@@ -3621,7 +3627,7 @@ static void init_picasso_screen(int monid)
 		picasso_refresh(monid);
 	}
 	init_picasso_screen_called = 1;
-#ifdef _WIN32
+#if P96_WIN32
 	mman_ResetWatch (gfxmem_bank.start + natmem_offset, gfxmem_bank.allocated_size);
 #endif
 
@@ -5754,7 +5760,7 @@ static void picasso_flushpixels(int index, uae_u8 *src, int off, bool render)
 	struct picasso96_state_struct *state = &picasso96_state[monid];
 	uae_u8 *src_start[2];
 	uae_u8 *src_end[2];
-#ifdef _WIN32
+#if P96_WIN32
 	ULONG_PTR gwwcnt;
 #else
 	int gwwcnt;
@@ -5795,7 +5801,7 @@ static void picasso_flushpixels(int index, uae_u8 *src, int off, bool render)
 		if (doskip() && p96skipmode == 1) {
 			break;
 		}
-#ifdef _WIN32
+#if P96_WIN32
 		if (!index && overlay_vram && overlay_active) {
 			ULONG ps;
 			gwwcnt = gwwbufsize[index];
@@ -5819,7 +5825,7 @@ static void picasso_flushpixels(int index, uae_u8 *src, int off, bool render)
 				for (int i = 0; i < gwwcnt; i++)
 					gwwbuf[index][i] = src_start[split] + i * gwwpagesize[index];
 			} else {
-#ifdef _WIN32
+#if P96_WIN32
 				ULONG ps;
 				gwwcnt = gwwbufsize[index];
 				if (mman_GetWriteWatch(src_start[split], regionsize, gwwbuf[index], &gwwcnt, &ps))
@@ -7230,5 +7236,4 @@ uae_u8 *save_p96 (size_t *len, uae_u8 *dstptr)
 }
 
 #endif
-
 

@@ -43,8 +43,13 @@
 #ifdef USE_LIBSERIALPORT
 #include <libserialport.h>
 #endif
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netinet/tcp.h>
 #include <sys/mman.h>
+#endif
 
 #define SERIALLOGGING 0
 #define SERIALDEBUG 0 /* 0, 1, 2 3 */
@@ -135,15 +140,26 @@ static void sermap_deactivate()
 
 int shmem_serial_state()
 {
+#ifdef _WIN32
+	return 0;
+#else
 	if (!sermap_handle)
 		return 0;
 	if (sermap_master)
 		return 1;
 	return 2;
+#endif
 }
 
 void shmem_serial_delete()
 {
+#ifdef _WIN32
+	sermap_deactivate();
+	sermap_master = false;
+	sermap_data = nullptr;
+	sermap_handle = nullptr;
+	sermap1 = sermap2 = nullptr;
+#else
 	sermap_deactivate();
 	sermap_master = false;
 	if (sermap_data) {
@@ -155,11 +171,16 @@ void shmem_serial_delete()
 	sermap_data = nullptr;
 	sermap_handle = nullptr;
 	sermap1 = sermap2 = nullptr;
+#endif
 }
 
 
 bool shmem_serial_create()
 {
+#ifdef _WIN32
+	shmem_serial_delete();
+	return false;
+#else
 	shmem_serial_delete();
 
 	int fd = shm_open(SER_MEMORY_MAPPING, O_RDWR, 0666);
@@ -208,6 +229,7 @@ bool shmem_serial_create()
 	}
 
 	return true;
+#endif
 }
 
 #endif

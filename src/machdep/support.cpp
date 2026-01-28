@@ -8,11 +8,27 @@
 #include <time.h>
 #include "uae/time.h"
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 int64_t g_uae_epoch = 0;
 static int usedtimermode = 0;
 
 static uae_time_t read_monotonic_nanoseconds(void)
 {
+#if defined(_WIN32)
+	static LARGE_INTEGER freq;
+	LARGE_INTEGER counter;
+	if (!freq.QuadPart) {
+		QueryPerformanceFrequency(&freq);
+	}
+	QueryPerformanceCounter(&counter);
+	return (counter.QuadPart * 1000000000LL) / freq.QuadPart - g_uae_epoch;
+#else
 	struct timespec ts;
 #ifdef CLOCK_MONOTONIC_RAW
 	clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
@@ -20,6 +36,7 @@ static uae_time_t read_monotonic_nanoseconds(void)
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 #endif
 	return ((ts.tv_sec * 1000000000LL) + ts.tv_nsec) - g_uae_epoch;
+#endif
 }
 
 uae_time_t uae_time(void)
@@ -32,6 +49,9 @@ uae_time_t uae_time(void)
 
 uae_s64 read_system_time(void)
 {
+#if defined(_WIN32)
+	return (uae_s64)GetTickCount64();
+#else
 	struct timespec ts;
 #ifdef CLOCK_MONOTONIC_RAW
 	clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
@@ -39,7 +59,17 @@ uae_s64 read_system_time(void)
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 #endif
 	return (ts.tv_sec * 1000LL) + (ts.tv_nsec / 1000000LL);
+#endif
 }
+
+#if defined(_WIN32)
+uae_s64 read_processor_time_rdtsc(void)
+{
+	LARGE_INTEGER counter;
+	QueryPerformanceCounter(&counter);
+	return (uae_s64)counter.QuadPart;
+}
+#endif
 
 static void figure_processor_speed_rdtsc(void)
 {

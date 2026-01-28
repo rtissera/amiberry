@@ -386,19 +386,19 @@ struct ShellSession {
 
 #include <vector>
 #include <map>
+#if !defined(_WIN32)
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <signal.h>
-#if !defined(_WIN32)                                                                                                       
-  #if defined(__APPLE__)                                                                                                   
-    #include <util.h>                                                                                                      
-  #elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)                      
-    #include <libutil.h>                                                                                                   
-  #else                                                                                                                    
-    #include <pty.h>                                                                                                       
-  #endif                                                                                                                   
-#endif             
+  #if defined(__APPLE__)
+    #include <util.h>
+  #elif defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    #include <libutil.h>
+  #else
+    #include <pty.h>
+  #endif
+#endif
 
 static std::map<uae_u32, ShellSession> shell_sessions;
 static uae_u32 next_session_handle = 1;
@@ -453,6 +453,32 @@ static uae_u32 uaelib_host_open(TrapContext* ctx, uaecptr command)
 #endif
 }
 
+#if defined(_WIN32)
+static uae_u32 uaelib_host_read(TrapContext* ctx, uae_u32 handle, uaecptr buffer, uae_u32 size)
+{
+	(void)ctx;
+	(void)handle;
+	(void)buffer;
+	(void)size;
+	return static_cast<uae_u32>(-1);
+}
+
+static uae_u32 uaelib_host_write(TrapContext* ctx, uae_u32 handle, uaecptr buffer, uae_u32 size)
+{
+	(void)ctx;
+	(void)handle;
+	(void)buffer;
+	(void)size;
+	return static_cast<uae_u32>(-1);
+}
+
+static uae_u32 uaelib_host_close(TrapContext* ctx, uae_u32 handle)
+{
+	(void)ctx;
+	(void)handle;
+	return 0;
+}
+#else
 static uae_u32 uaelib_host_read(TrapContext* ctx, uae_u32 handle, uaecptr buffer, uae_u32 size)
 {
 	if (shell_sessions.find(handle) == shell_sessions.end())
@@ -460,9 +486,9 @@ static uae_u32 uaelib_host_read(TrapContext* ctx, uae_u32 handle, uaecptr buffer
 
 	ShellSession& session = shell_sessions[handle];
 	std::vector<char> buf(size);
-	
+
 	ssize_t bytes_read = read(session.outfd, buf.data(), size);
-	
+
 	if (bytes_read > 0) {
 		trap_put_bytes(ctx, (uae_u8*)buf.data(), buffer, bytes_read);
 		return bytes_read;
@@ -472,7 +498,7 @@ static uae_u32 uaelib_host_read(TrapContext* ctx, uae_u32 handle, uaecptr buffer
 		if (waitpid(session.pid, &status, WNOHANG) != 0) {
 			return -1; // Process exited
 		}
-		return 0; 
+		return 0;
 	} else {
 		if (errno == EAGAIN || errno == EWOULDBLOCK)
 			return 0;
@@ -503,10 +529,11 @@ static uae_u32 uaelib_host_close(TrapContext* ctx, uae_u32 handle)
 	close(session.outfd);
 	kill(session.pid, SIGTERM);
 	waitpid(session.pid, NULL, 0);
-	
+
 	shell_sessions.erase(handle);
 	return 1;
 }
+#endif
 
 static std::string quote_path(const char* path) {
 	std::string res = "'";

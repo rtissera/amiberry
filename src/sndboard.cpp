@@ -1677,7 +1677,7 @@ static void codec_start(struct snddev_data *data)
 		data->streamid = audio_enable_stream(true, -1, 2, audio_state_sndboard_toccata, data);
 	}
 	if (data->snddev_active & STATUS_FIFO_RECORD) {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
 		data->capture_buffer_size = 48000 * 2 * 2; // 1s at 48000/stereo/16bit
 		data->capture_buffer = xcalloc(uae_u8, data->capture_buffer_size);
 		sndboard_init_capture(data->freq_adjusted);
@@ -1691,7 +1691,7 @@ static void codec_stop(struct snddev_data *data)
 		return;
 	write_log(_T("CODEC stop\n"));
 	data->snddev_active = 0;
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
 	sndboard_free_capture();
 #endif
 	int streamid = data->streamid;
@@ -1722,7 +1722,7 @@ static void sndboard_rethink(void)
 
 static void sndboard_process_capture(struct snddev_data *data)
 {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
 	int frames;
 	uae_u8 *buffer = sndboard_get_buffer(&frames);
 	if (buffer && frames) {
@@ -3016,14 +3016,16 @@ static void snd_init(void)
 #ifdef _WIN32
 
 #include <mmdeviceapi.h>
-#include <Audioclient.h>
+#include <audioclient.h>
 
 #define REFTIMES_PER_SEC  10000000
 
+#if !defined(__MINGW32__) && !defined(__MINGW64__)
 static const CLSID CLSID_MMDeviceEnumerator = __uuidof(MMDeviceEnumerator);
 static const IID IID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
 static const IID IID_IAudioClient = __uuidof(IAudioClient);
 static const IID IID_IAudioCaptureClient = __uuidof(IAudioCaptureClient);
+#endif
 
 #define EXIT_ON_ERROR(hres) if (FAILED(hres)) { goto Exit; }
 #define SAFE_RELEASE(punk)  if ((punk) != NULL) { (punk)->Release(); (punk) = NULL; }
@@ -3153,6 +3155,27 @@ Exit:;
 	CoTaskMemFree(wavfmt2);
 	write_log(_T("sndboard capture init failed %08x\n"), hr);
 	sndboard_free_capture();
+	return false;
+}
+
+#elif defined(_WIN32)
+static uae_u8 *sndboard_get_buffer(int *frames)
+{
+	if (frames)
+		*frames = -1;
+	return nullptr;
+}
+
+static void sndboard_release_buffer(uae_u8 *, int)
+{
+}
+
+static void sndboard_free_capture(void)
+{
+}
+
+static bool sndboard_init_capture(int)
+{
 	return false;
 }
 

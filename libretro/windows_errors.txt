@@ -1,0 +1,193 @@
+g++ -I../src -I../src/include -I../src/osdep/libretro -I../src/osdep -I../src/threaddep -I../src/archivers -I../external/floppybridge/src -I. -I./libco -I./libretro-common/include    -ffunction-sections -fdata-sections -O3 -DNDEBUG -DAMIBERRY -DLIBRETRO -D_FILE_OFFSET_BITS=64 -DAMIBERRY_DATADIR=\".\" -DAMIBERRY_LIBDIR=\".\" -DOSDEP_GFX_PLATFORM_HEADER=\"libretro/gfx_platform_internal.h\" -DOSDEP_AMIBERRY_PLATFORM_HEADER=\"libretro/amiberry_platform_internal.h\" -DOSDEP_INPUT_PLATFORM_HEADER=\"libretro/input_platform_internal.h\" -DOSDEP_GUI_HANDLING_HEADER=\"libretro/gui_handling_platform.h\" -DOSDEP_GUI_COLOR_HEADER=\"gui_color_platform_libretro.h\" -DCHD_FLAC_PLATFORM_HEADER=\"flac_platform_internal_libretro.h\" -DSOUND_PLATFORM_HEADER=\"sound_platform_internal_libretro.h\" -DCPU_X86_64 -DLIBRETRO_NO_JIT -c -o ../src/a2065.o ../src/a2065.cpp
+g++ -I../src -I../src/include -I../src/osdep/libretro -I../src/osdep -I../src/threaddep -I../src/archivers -I../external/floppybridge/src -I. -I./libco -I./libretro-common/include    -ffunction-sections -fdata-sections -O3 -DNDEBUG -DAMIBERRY -DLIBRETRO -D_FILE_OFFSET_BITS=64 -DAMIBERRY_DATADIR=\".\" -DAMIBERRY_LIBDIR=\".\" -DOSDEP_GFX_PLATFORM_HEADER=\"libretro/gfx_platform_internal.h\" -DOSDEP_AMIBERRY_PLATFORM_HEADER=\"libretro/amiberry_platform_internal.h\" -DOSDEP_INPUT_PLATFORM_HEADER=\"libretro/input_platform_internal.h\" -DOSDEP_GUI_HANDLING_HEADER=\"libretro/gui_handling_platform.h\" -DOSDEP_GUI_COLOR_HEADER=\"gui_color_platform_libretro.h\" -DCHD_FLAC_PLATFORM_HEADER=\"flac_platform_internal_libretro.h\" -DSOUND_PLATFORM_HEADER=\"sound_platform_internal_libretro.h\" -DCPU_X86_64 -DLIBRETRO_NO_JIT -c -o ../src/a2091.o ../src/a2091.cpp
+g++ -I../src -I../src/include -I../src/osdep/libretro -I../src/osdep -I../src/threaddep -I../src/archivers -I../external/floppybridge/src -I. -I./libco -I./libretro-common/include    -ffunction-sections -fdata-sections -O3 -DNDEBUG -DAMIBERRY -DLIBRETRO -D_FILE_OFFSET_BITS=64 -DAMIBERRY_DATADIR=\".\" -DAMIBERRY_LIBDIR=\".\" -DOSDEP_GFX_PLATFORM_HEADER=\"libretro/gfx_platform_internal.h\" -DOSDEP_AMIBERRY_PLATFORM_HEADER=\"libretro/amiberry_platform_internal.h\" -DOSDEP_INPUT_PLATFORM_HEADER=\"libretro/input_platform_internal.h\" -DOSDEP_GUI_HANDLING_HEADER=\"libretro/gui_handling_platform.h\" -DOSDEP_GUI_COLOR_HEADER=\"gui_color_platform_libretro.h\" -DCHD_FLAC_PLATFORM_HEADER=\"flac_platform_internal_libretro.h\" -DSOUND_PLATFORM_HEADER=\"sound_platform_internal_libretro.h\" -DCPU_X86_64 -DLIBRETRO_NO_JIT -c -o ../src/akiko.o ../src/akiko.cpp
+g++ -I../src -I../src/include -I../src/osdep/libretro -I../src/osdep -I../src/threaddep -I../src/archivers -I../external/floppybridge/src -I. -I./libco -I./libretro-common/include    -ffunction-sections -fdata-sections -O3 -DNDEBUG -DAMIBERRY -DLIBRETRO -D_FILE_OFFSET_BITS=64 -DAMIBERRY_DATADIR=\".\" -DAMIBERRY_LIBDIR=\".\" -DOSDEP_GFX_PLATFORM_HEADER=\"libretro/gfx_platform_internal.h\" -DOSDEP_AMIBERRY_PLATFORM_HEADER=\"libretro/amiberry_platform_internal.h\" -DOSDEP_INPUT_PLATFORM_HEADER=\"libretro/input_platform_internal.h\" -DOSDEP_GUI_HANDLING_HEADER=\"libretro/gui_handling_platform.h\" -DOSDEP_GUI_COLOR_HEADER=\"gui_color_platform_libretro.h\" -DCHD_FLAC_PLATFORM_HEADER=\"flac_platform_internal_libretro.h\" -DSOUND_PLATFORM_HEADER=\"sound_platform_internal_libretro.h\" -DCPU_X86_64 -DLIBRETRO_NO_JIT -c -o ../src/amax.o ../src/amax.cpp
+In file included from C:/mingw64/x86_64-w64-mingw32/include/stdarg.h:140,
+                 from C:/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include/stdarg.h:1,
+                 from ./sdl_compat.h:7,
+                 from ./SDL.h:4,
+                 from ../src/include/uae/string.h:7,
+                 from ../src/osdep/sysconfig.h:619,
+                 from ../src/amax.cpp:2:
+C:/mingw64/x86_64-w64-mingw32/include/_mingw_stdarg.h:11:2: error: #error Only Win32 target is supported!
+   11 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/stdarg.h:140,
+                 from C:/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include/stdarg.h:1,
+                 from ./sdl_compat.h:7,
+                 from ./SDL.h:4,
+                 from ../src/include/uae/string.h:7,
+                 from ../src/osdep/sysconfig.h:619,
+                 from ../src/a2065.cpp:10:
+C:/mingw64/x86_64-w64-mingw32/include/_mingw_stdarg.h:11:2: error: #error Only Win32 target is supported!
+   11 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/stdarg.h:140,
+                 from C:/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include/stdarg.h:1,
+                 from ./sdl_compat.h:7,
+                 from ./SDL.h:4,
+                 from ../src/include/uae/string.h:7,
+                 from ../src/osdep/sysconfig.h:619,
+                 from ../src/akiko.cpp:149:
+C:/mingw64/x86_64-w64-mingw32/include/_mingw_stdarg.h:11:2: error: #error Only Win32 target is supported!
+   11 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/stdarg.h:140,
+                 from C:/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include/stdarg.h:1,
+                 from ./sdl_compat.h:7,
+                 from ./SDL.h:4,
+                 from ../src/include/uae/string.h:7,
+                 from ../src/osdep/sysconfig.h:619,
+                 from ../src/a2091.cpp:25:
+C:/mingw64/x86_64-w64-mingw32/include/_mingw_stdarg.h:11:2: error: #error Only Win32 target is supported!
+   11 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from ../src/include/sysdeps.h:111,
+                 from ../src/a2091.cpp:26:
+C:/mingw64/x86_64-w64-mingw32/include/sys/types.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from ../src/include/sysdeps.h:111,
+                 from ../src/amax.cpp:3:
+C:/mingw64/x86_64-w64-mingw32/include/sys/types.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from ../src/include/sysdeps.h:111,
+                 from ../src/a2065.cpp:11:
+C:/mingw64/x86_64-w64-mingw32/include/sys/types.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from ../src/include/sysdeps.h:111,
+                 from ../src/akiko.cpp:150:
+C:/mingw64/x86_64-w64-mingw32/include/sys/types.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/utime.h:6,
+                 from ../src/include/sysdeps.h:133:
+C:/mingw64/x86_64-w64-mingw32/include/sys/utime.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/utime.h:6,
+                 from ../src/include/sysdeps.h:133:
+C:/mingw64/x86_64-w64-mingw32/include/sys/utime.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/utime.h:6,
+                 from ../src/include/sysdeps.h:133:
+C:/mingw64/x86_64-w64-mingw32/include/sys/utime.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/utime.h:6,
+                 from ../src/include/sysdeps.h:133:
+C:/mingw64/x86_64-w64-mingw32/include/sys/utime.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from ../src/include/sysdeps.h:137:
+C:/mingw64/x86_64-w64-mingw32/include/sys/stat.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from ../src/include/sysdeps.h:137:
+C:/mingw64/x86_64-w64-mingw32/include/sys/stat.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from ../src/include/sysdeps.h:137:
+C:/mingw64/x86_64-w64-mingw32/include/sys/stat.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from ../src/include/sysdeps.h:137:
+C:/mingw64/x86_64-w64-mingw32/include/sys/stat.h:10:2: error: #error Only Win32 target is supported!
+   10 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/sys/time.h:10,
+                 from ../src/include/sysdeps.h:141:
+C:/mingw64/x86_64-w64-mingw32/include/time.h:12:2: error: #error Only Win32 target is supported!
+   12 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/sys/time.h:10,
+                 from ../src/include/sysdeps.h:141:
+C:/mingw64/x86_64-w64-mingw32/include/time.h:12:2: error: #error Only Win32 target is supported!
+   12 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/sys/time.h:10,
+                 from ../src/include/sysdeps.h:141:
+C:/mingw64/x86_64-w64-mingw32/include/time.h:12:2: error: #error Only Win32 target is supported!
+   12 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/sys/time.h:10,
+                 from ../src/include/sysdeps.h:141:
+C:/mingw64/x86_64-w64-mingw32/include/time.h:12:2: error: #error Only Win32 target is supported!
+   12 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/time.h:25:
+C:/mingw64/x86_64-w64-mingw32/include/sys/timeb.h:12:2: error: #error Only Win32 target is supported!
+   12 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/time.h:25:
+C:/mingw64/x86_64-w64-mingw32/include/sys/timeb.h:12:2: error: #error Only Win32 target is supported!
+   12 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/time.h:25:
+C:/mingw64/x86_64-w64-mingw32/include/sys/timeb.h:12:2: error: #error Only Win32 target is supported!
+   12 | #error Only Win32 target is supported!
+      |  ^~~~~
+In file included from C:/mingw64/x86_64-w64-mingw32/include/time.h:25:
+C:/mingw64/x86_64-w64-mingw32/include/sys/timeb.h:12:2: error: #error Only Win32 target is supported!
+   12 | #error Only Win32 target is supported!
+      |  ^~~~~
+C:/mingw64/x86_64-w64-mingw32/include/time.h:174:27: error: macro '_tzset' passed 1 arguments, but takes just 0
+  174 |   void __cdecl _tzset(void);
+      |                           ^
+../src/osdep/sysconfig.h:625:9: note: macro '_tzset' defined here
+  625 | #define _tzset()            tzset()
+      |         ^~~~~~
+C:/mingw64/x86_64-w64-mingw32/include/time.h:174:27: error: macro '_tzset' passed 1 arguments, but takes just 0
+  174 |   void __cdecl _tzset(void);
+      |                           ^
+../src/osdep/sysconfig.h:625:9: note: macro '_tzset' defined here
+  625 | #define _tzset()            tzset()
+      |         ^~~~~~
+C:/mingw64/x86_64-w64-mingw32/include/time.h:174:27: error: macro '_tzset' passed 1 arguments, but takes just 0
+  174 |   void __cdecl _tzset(void);
+      |                           ^
+C:/mingw64/x86_64-w64-mingw32/include/time.h:174:27: error: macro '_tzset' passed 1 arguments, but takes just 0
+  174 |   void __cdecl _tzset(void);
+      |                           ^
+../src/osdep/sysconfig.h:625:9: note: macro '_tzset' defined here
+  625 | #define _tzset()            tzset()
+      |         ^~~~~~
+../src/osdep/sysconfig.h:625:9: note: macro '_tzset' defined here
+  625 | #define _tzset()            tzset()
+      |         ^~~~~~
+In file included from ../src/machdep/maccess.h:12,
+                 from ../src/include/memory.h:63,
+                 from ../src/a2091.cpp:30:
+../src/include/uae/byteswap.h:29:10: fatal error: byteswap.h: No such file or directory
+   29 | #include <byteswap.h>
+      |          ^~~~~~~~~~~~
+In file included from ../src/machdep/maccess.h:12,
+                 from ../src/include/memory.h:63,
+                 from ../src/a2065.cpp:16:
+../src/include/uae/byteswap.h:29:10: fatal error: byteswap.h: No such file or directory
+   29 | #include <byteswap.h>
+      |          ^~~~~~~~~~~~
+compilation terminated.c
+ompilation terIn file included from ../src/machdep/maccess.h:12,
+                 from ../src/include/memory.h:63,
+                 from ../src/amax.cpp:8:
+../src/include/uae/byteswap.h:29:10: fatal error: byteswap.h: No such file or directory
+   29 | #include <byteswap.h>
+      |          ^~~~~~~~~~~~
+In file included from ../src/machdep/maccess.h:12,
+                 from ../src/include/memory.h:63,
+                 from ../src/akiko.cpp:153:
+../src/include/uae/byteswap.h:29:10: fatal error: byteswap.h: No such file or directory
+   29 | #include <byteswap.h>
+      |          ^~~~~~~~~~~~
+compilatiomcompilin tenrmiaationted.
+nated.
+ terminated.
+make: *** [Makefile:498: ../src/amax.o] Error 1
+make: *** Waiting for unfinished jobs....
+make: *** [Makefile:498: ../src/a2065.o] Error 1
+make: *** [Makefile:498: ../src/akiko.o] Error 1
+make: *** [Makefile:498: ../src/a2091.o] Error 1

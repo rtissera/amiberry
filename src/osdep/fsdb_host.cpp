@@ -17,8 +17,8 @@
 #include <chrono>
 #include <sys/types.h>
 #include <sys/stat.h>
-#ifdef WINDOWS
-#include <sys/utime.h>
+#if defined(_WIN32)
+#include <utime.h>
 #else
 #include <sys/time.h>
 #endif
@@ -250,6 +250,19 @@ bool my_utime(const char* name, const struct mytimeval* tv)
 		return false;
 	}
 
+#if defined(_WIN32)
+	struct _utimbuf times {};
+	if (tv == nullptr) {
+		const time_t now = time(nullptr);
+		times.actime = now;
+		times.modtime = now;
+	} else {
+		const time_t t = static_cast<time_t>(tv->tv_sec);
+		times.actime = t;
+		times.modtime = t;
+	}
+	return _utime(name, &times) == 0;
+#else
 	struct mytimeval mtv;
 	struct timeval times[2];
 
@@ -283,6 +296,7 @@ bool my_utime(const char* name, const struct mytimeval* tv)
 	catch (...) {
 		return false;
 	}
+#endif
 }
 
 /* return supported combination */

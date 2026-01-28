@@ -4149,7 +4149,7 @@ static void getextramonitorpos(const struct AmigaMonitor* mon, SDL_Rect* r)
 	int monid = MAX_AMIGAMONITORS - 1;
 	int rightmon = -1;
 	int rightedge = 0;
-	HWND hwnd = NULL;
+	SDL_Window* hwnd = nullptr;
 	while (monid >= 1) {
 		monid--;
 		hwnd = AMonitors[monid].amiga_window;

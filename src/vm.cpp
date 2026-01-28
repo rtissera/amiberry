@@ -13,7 +13,7 @@
 #include "options.h"
 #include "memory.h"
 #ifdef _WIN32
-
+#include <windows.h>
 #else
 #include <sys/mman.h>
 #endif

@@ -25,7 +25,52 @@
 
 #ifdef __cplusplus
 #include <string>
+#include <vector>
+#include <array>
+#include <map>
+#include <unordered_map>
+#include <set>
+#include <unordered_set>
+#include <list>
+#include <deque>
+#include <memory>
+#include <functional>
+#include <exception>
+#include <utility>
+#include <tuple>
+#include <atomic>
+#include <mutex>
+#include <thread>
+#include <string_view>
+#if defined(_WIN32) || defined(__MINGW32__)
+using std::string;
+using std::wstring;
+using std::u16string;
+using std::u32string;
+using std::string_view;
+using std::vector;
+using std::array;
+using std::map;
+using std::unordered_map;
+using std::set;
+using std::unordered_set;
+using std::list;
+using std::deque;
+using std::pair;
+using std::tuple;
+using std::unique_ptr;
+using std::shared_ptr;
+using std::weak_ptr;
+using std::function;
+using std::exception;
+using std::atomic;
+using std::mutex;
+using std::lock_guard;
+using std::unique_lock;
+using std::thread;
+#else
 using namespace std;
+#endif
 #else
 #include <string.h>
 #include <ctype.h>
@@ -226,7 +271,7 @@ extern void to_upper (TCHAR *s, int len);
 
 /* We can only rely on GNU C getting enums right. Mickeysoft VSC++ is known
  * to have problems, and it's likely that other compilers choke too. */
-#ifdef __GNUC__
+#if defined(__GNUC__) && !defined(_WIN32) && !defined(__MINGW32__)
 #define ENUMDECL typedef enum
 #define ENUMNAME(name) name
 

@@ -47,7 +47,12 @@
 
 #ifdef AMIBERRY
 #include "amiberry_input.h"
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
+#endif
 #endif
 
 #define cfgfile_warning write_log

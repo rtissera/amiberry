@@ -16,6 +16,10 @@
 typedef int HDC;
 typedef int HGLOBAL;
 typedef unsigned int UINT;
+#else
+typedef void* HDC;
+typedef void* HGLOBAL;
+typedef unsigned int UINT;
 #endif
 #endif
 #include "clipboard.h"

@@ -112,6 +112,9 @@ typedef char TCHAR;
 typedef signed long long evt_t;
 
 // Some more types from the original UAE code
+#ifdef _WIN32
+#include <basetsd.h>
+#else
 typedef signed char INT8;
 typedef signed short INT16;
 typedef signed int INT32;
@@ -120,5 +123,6 @@ typedef signed char UINT8;
 typedef unsigned short UINT16;
 typedef unsigned int UINT32;
 typedef unsigned long long UINT64;
+#endif
 
 #endif /* UAE_TYPES_H */

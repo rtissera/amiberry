@@ -12,6 +12,10 @@
 #include "uae/types.h"
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #define UAE_DLHANDLE HINSTANCE
 #else
 #define UAE_DLHANDLE void *

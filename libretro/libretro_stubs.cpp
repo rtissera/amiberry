@@ -6,6 +6,7 @@
 #include "disk.h"
 #include "ethernet.h"
 #include "sana2.h"
+#include "bsdsocket.h"
 
 #include <string>
 #include <vector>
@@ -24,6 +25,20 @@ int emulating = 0;
 bool config_loaded = false;
 bool joystick_refresh_needed = false;
 int scsiromselected = 0;
+
+#if defined(_WIN32)
+void init_max_signals()
+{
+}
+
+#if !defined(BSDSOCKET)
+volatile int bsd_int_requested = 0;
+void bsdsock_fake_int_handler(void)
+{
+	bsd_int_requested = 0;
+}
+#endif
+#endif
 
 int gui_init(void)
 {

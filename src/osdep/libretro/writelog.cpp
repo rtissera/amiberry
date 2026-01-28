@@ -8,10 +8,12 @@
 #include <cstdarg>
 #include <cstdio>
 #include <iostream>
+#ifndef _WIN32
 #include <unistd.h>
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <poll.h>
+#endif
 #include <clocale>
 #include <SDL.h>
 
@@ -43,7 +45,7 @@ extern bool lof_store;
 static int console_input_linemode = -1;
 int always_flush_log = 1;
 TCHAR* conlogfile = nullptr;
-static HWND previousactivewindow;
+static SDL_Window* previousactivewindow;
 
 #define WRITE_LOG_BUF_SIZE 4096
 
@@ -58,6 +60,19 @@ bool is_console_open()
 	return consoleopen;
 }
 
+#ifdef _WIN32
+static void restore_console_settings()
+{
+}
+
+void set_console_input_mode(int)
+{
+}
+
+static void getconsole()
+{
+}
+#else
 static void restore_console_settings()
 {
 	set_console_input_mode(1);
@@ -103,6 +118,7 @@ static void getconsole()
 		// but we can log that we are initializing.
 	}
 }
+#endif
 
 void deactivate_console(void)
 {
@@ -192,7 +208,7 @@ void open_console()
 
 void reopen_console ()
 {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
 	HWND hwnd;
 
 	if (realconsole)
@@ -231,7 +247,7 @@ void close_console ()
 {
 	if (realconsole)
 		return;
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
 	if (consoleopen > 0) {
 		//close_debug_window ();
 	} else if (consoleopen < 0) {
@@ -260,6 +276,9 @@ void close_console ()
 
 int read_log()
 {
+#ifdef _WIN32
+	return -1;
+#else
 	if (consoleopen >= 0)
 		return -1;
 	if (console_isch()) {
@@ -268,6 +287,7 @@ int read_log()
 			return ch;
 	}
 	return -1;
+#endif
 }
 
 
@@ -361,7 +381,7 @@ void console_out(const TCHAR* txt)
 
 bool console_isch ()
 {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
 	flushmsgpump();
 	if (console_buffer) {
 		return 0;
@@ -372,6 +392,8 @@ bool console_isch ()
 		GetNumberOfConsoleInputEvents (stdinput, &events);
 		return events > 0;
 	}
+	return false;
+#elif defined(_WIN32)
 	return false;
 #else
 	if (console_buffer)
@@ -386,6 +408,9 @@ bool console_isch ()
 
 TCHAR console_getch()
 {
+#ifdef _WIN32
+	return 0;
+#else
 	fflush(stdout);
 	if (console_buffer)
 	{
@@ -404,11 +429,18 @@ TCHAR console_getch()
 		}
 	}
 	return 0;
+#endif
 }
 
 int console_get (TCHAR *out, int maxlen)
 {
 #ifdef _WIN32
+#if defined(LIBRETRO)
+	if (out && maxlen > 0) {
+		*out = 0;
+	}
+	return -1;
+#else
 	*out = 0;
 
 	flushmsgpump();
@@ -447,6 +479,7 @@ int console_get (TCHAR *out, int maxlen)
 		return totallen;
 	}
 	return 0;
+#endif
 #else
 	set_console_input_mode(1);
 	TCHAR *res = fgets(out, maxlen, stdin);

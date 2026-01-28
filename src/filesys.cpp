@@ -2775,6 +2775,8 @@ static TCHAR *get_nname (Unit *unit, a_inode *base, TCHAR *rel, TCHAR **modified
 	* looking for.  */
 #ifdef _WIN32
 	TCHAR *relalt = NULL;
+#endif
+#if defined(_WIN32) && !defined(LIBRETRO)
 	found = fsdb_search_dir (base->nname, rel, &relalt);
 #else
 	found = fsdb_search_dir (base->nname, rel);
@@ -6159,7 +6161,7 @@ static void	action_delete_object(TrapContext *ctx, Unit *unit, dpacket *packet)
 				return;
 			}
 		} else {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
 			if (my_unlink (a->nname, false) == -1) {
 #else
 			if (my_unlink (a->nname) == -1) {
@@ -9575,7 +9577,7 @@ void filesys_install_code (void)
 
 }
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
 #include "od-win32/win32_filesys.cpp"
 #endif
 

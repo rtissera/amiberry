@@ -36,10 +36,14 @@ typedef unsigned long ioctlsockopt_t;
 #define container_of(address, type, field) ((type *)( \
         (PCHAR)(address) - \
         (ULONG_PTR)(&((type *)0)->field)))
+#else
+#define container_of(address, type, field) ((type *)( \
+        (char*)(address) - \
+        (uintptr_t)(&((type *)0)->field)))
 #endif
 
 #include <winsock2.h>
-#include <Ws2tcpip.h>
+#include <ws2tcpip.h>
 #include <sys/timeb.h>
 #include <iphlpapi.h>
 
@@ -188,7 +192,7 @@ int inet_aton(const char *cp, struct in_addr *ia);
 #include <sys/socket.h>
 #endif
 
-#if defined(HAVE_SYS_IOCTL_H)
+#if defined(HAVE_SYS_IOCTL_H) && !defined(_WIN32)
 # include <sys/ioctl.h>
 #endif
 

@@ -65,6 +65,11 @@ TCHAR *fsdb_search_dir (const TCHAR *dirname, TCHAR *rel)
 	my_closedir (dir);
 	return p;
 }
+#else
+TCHAR *fsdb_search_dir (const TCHAR *, TCHAR *rel)
+{
+	return rel;
+}
 #endif
 
 static FILE *get_fsdb (a_inode *dir, const TCHAR *mode)
@@ -85,7 +90,7 @@ static void kill_fsdb (a_inode *dir)
 	if (!dir->nname)
 		return;
 	TCHAR *n = build_nname (dir->nname, FSDB_FILE);
-	_wunlink (n);
+	unlink(n);
 	xfree (n);
 }
 

@@ -85,7 +85,9 @@
 #define ACTION_REPLAY /* Action Replay 1/2/3 support */
 #define PICASSO96 /* Picasso96 display card emulation */
 #define UAEGFX_INTERNAL /* built-in libs:picasso96/uaegfx.card */
+#if !defined(LIBRETRO) || !defined(_WIN32)
 #define BSDSOCKET /* bsdsocket.library emulation */
+#endif
 #define CAPS /* CAPS-image support */
 #define SCP /* SuperCardPro */
 #define FDI2RAW /* FDI 1.0 and 2.x image support */
@@ -98,14 +100,20 @@
 #define A2091 /* A590/A2091 SCSI */
 #define A2065 /* A2065 Ethernet card */
 #define GFXBOARD /* Hardware graphics board */
+#if !defined(LIBRETRO) || !defined(_WIN32)
 #define SANA2 /* SANA2 network driver */
+#endif
 #define AMAX /* A-Max ROM adapter emulation */
 /* #define RETROPLATFORM */ /* Cloanto RetroPlayer support */
+#if !defined(LIBRETRO) || !defined(_WIN32)
 #define WITH_CHD
+#endif
 /* #define WITH_LUA */ /* lua scripting */
 #define WITH_UAENATIVE
+#if !defined(LIBRETRO) || !defined(_WIN32)
 #define WITH_SLIRP
 #define WITH_BUILTIN_SLIRP
+#endif
 #define WITH_TABLETLIBRARY
 /* #define WITH_UAENET_PCAP */ // defined externally in Amiberry
 #define WITH_PPC
@@ -579,7 +587,8 @@ typedef int32_t uae_atomic;
 /* Define to 1 if `S_un' is a member of `struct in_addr'. */
 /* #un#def HAVE_STRUCT_IN_ADDR_S_UN */
 
-#ifdef _WIN32
+/* Avoid clobbering Windows target macros when using MinGW/MSVC builds. */
+#if defined(_WIN32) && !defined(__MINGW32__) && !defined(__MINGW64__) && !defined(_MSC_VER)
 #undef _WIN32
 #endif
 
@@ -600,8 +609,10 @@ typedef int32_t uae_atomic;
 #define strcmpi(x,y) SDL_strcasecmp(x,y)
 #define stricmp(x,y) SDL_strcasecmp(x,y)
 
+#if !defined(_WIN32) && !defined(__MINGW32__)
 typedef int SOCKET;
 #define INVALID_SOCKET -1
+#endif
 
 typedef unsigned char boolean;
 #ifndef FALSE
@@ -613,7 +624,9 @@ typedef unsigned char boolean;
 
 typedef unsigned short USHORT;
 
+#if !defined(_WIN32) && !defined(__MINGW32__)
 #define Sleep(x) usleep((x)*1000)
+#endif
 
 /* Some defines to make it easier to compare files with WinUAE */
 #include "uae/string.h"
@@ -635,5 +648,9 @@ typedef char TCHAR;
 #define _ftelli64(x)        ftello64(x)
 #define _fseeki64(x,y,z)    fseeko64(x,y,z)
 #endif
+#if !defined(_WIN32) && !defined(__MINGW32__)
 #define _wunlink(x)         unlink(x)
+#endif
+#ifndef _istalnum
 #define _istalnum(x)        isalnum(x)
+#endif

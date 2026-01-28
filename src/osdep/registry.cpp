@@ -1,6 +1,6 @@
 #include "sysconfig.h"
 #include "sysdeps.h"
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
 #include <windows.h>
 #include <shlwapi.h>
 #include "win32.h"
@@ -11,7 +11,7 @@
 
 #include <filesystem>
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
 static int inimode = 0;
 #else
 static int inimode = 1;
@@ -24,7 +24,7 @@ static struct ini_data* inidata;
 
 static HKEY gr(UAEREG* root)
 {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     if (!root)
         return hWinUAEKey;
 #else
@@ -57,7 +57,7 @@ int regsetstr(UAEREG* root, const TCHAR* name, const TCHAR* str)
         int ret = ini_addstring(inidata, gs(root), name, str);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         HKEY rk = gr(root);
         if (!rk)
@@ -76,7 +76,7 @@ int regsetint(UAEREG* root, const TCHAR* name, int val)
         int ret = ini_addstring(inidata, gs(root), name, tmp);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         DWORD v = val;
         HKEY rk = gr(root);
@@ -100,7 +100,7 @@ int regqueryint(UAEREG* root, const TCHAR* name, int* val)
         xfree(tmp);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         DWORD dwType = REG_DWORD;
         DWORD size = sizeof(int);
@@ -121,7 +121,7 @@ int regsetlonglong(UAEREG* root, const TCHAR* name, unsigned long long val)
         const int ret = ini_addstring(inidata, gs(root), name, tmp);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         ULONGLONG v = val;
         HKEY rk = gr(root);
@@ -146,7 +146,7 @@ int regquerylonglong(UAEREG* root, const TCHAR* name, unsigned long long* val)
         xfree(tmp);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         DWORD dwType = REG_QWORD;
         DWORD size = sizeof(ULONGLONG);
@@ -174,7 +174,7 @@ int regquerystr(UAEREG* root, const TCHAR* name, TCHAR* str, int* size)
         xfree(tmp);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         DWORD size2 = *size * sizeof(TCHAR);
         HKEY rk = gr(root);
@@ -210,7 +210,7 @@ int regenumstr(UAEREG* root, int idx, TCHAR* name, const int* nsize, TCHAR* str,
         xfree(name2);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         DWORD nsize2 = *nsize;
         DWORD size2 = *size;
@@ -239,7 +239,7 @@ int regquerydatasize(UAEREG* root, const TCHAR* name, int* size)
         xfree(tmp);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         HKEY rk = gr(root);
         if (!rk)
@@ -264,7 +264,7 @@ int regsetdata(UAEREG* root, const TCHAR* name, const void* str, int size)
         xfree(tmp);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         HKEY rk = gr(root);
         if (!rk)
@@ -308,7 +308,7 @@ int regquerydata(UAEREG* root, const TCHAR* name, void* str, const int* size)
         xfree(tmp);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         HKEY rk = gr(root);
         if (!rk)
@@ -328,7 +328,7 @@ int regdelete(UAEREG* root, const TCHAR* name)
         ini_delete(inidata, gs(root), name);
         return 1;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         HKEY rk = gr(root);
         if (!rk)
@@ -347,7 +347,7 @@ int regexists(UAEREG* root, const TCHAR* name)
         int ret = ini_getstring(inidata, gs(root), name, nullptr);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         HKEY rk = gr(root);
         if (!rk)
@@ -367,7 +367,7 @@ void regdeletetree(UAEREG* root, const TCHAR* name)
         ini_delete(inidata, s, nullptr);
         xfree(s);
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         HKEY rk = gr(root);
         if (!rk)
@@ -388,7 +388,7 @@ int regexiststree(UAEREG* root, const TCHAR* name)
         xfree(s);
         return ret;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         int ret = 0;
         HKEY k = NULL;
@@ -426,7 +426,7 @@ UAEREG* regcreatetree(UAEREG* root, const TCHAR* name)
         fkey = xcalloc(UAEREG, 1);
         fkey->inipath = ininame;
     }
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     else {
         DWORD err;
         HKEY rk = gr(root);
@@ -457,7 +457,7 @@ void regclosetree(UAEREG* key)
     }
     if (!key)
         return;
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     if (key->fkey)
         RegCloseKey(key->fkey);
 #endif
@@ -477,7 +477,7 @@ int reginitializeinit(TCHAR** pppath)
         int ok = 0;
         TCHAR* posn;
         path[0] = 0;
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
         GetFullPathName(executable_path, sizeof path / sizeof(TCHAR), path, NULL);
         if (_tcslen(path) > 4 && !_tcsicmp(path + _tcslen(path) - 4, _T(".exe"))) {
             _tcscpy(path + _tcslen(path) - 3, _T("ini"));
@@ -508,7 +508,7 @@ int reginitializeinit(TCHAR** pppath)
     }
 
     fpath[0] = 0;
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     GetFullPathName(path, sizeof fpath / sizeof(TCHAR), fpath, NULL);
     if (_tcslen(fpath) < 5 || _tcsicmp(fpath + _tcslen(fpath) - 4, _T(".ini")))
         return 0;
@@ -525,7 +525,7 @@ int reginitializeinit(TCHAR** pppath)
     return 1;
 fail:
     regclosetree(r);
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(LIBRETRO)
     if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES)
         DeleteFile(path);
     if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES)

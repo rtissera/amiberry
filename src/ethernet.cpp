@@ -4,7 +4,15 @@
 
 #include "ethernet.h"
 #ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
+#ifdef _WIN32
+#ifdef LIBRETRO
+#include "amiberry_uaenet.h"
+#else
 #include "win32_uaenet.h"
+#endif
 #elif defined (AMIBERRY)
 #include "amiberry_uaenet.h"
 #endif
@@ -14,6 +22,10 @@
 #include "uae/slirp.h"
 #include "gui.h"
 #include "rommgr.h"
+
+#if defined(_WIN32)
+#undef HAVE_INET_ATON
+#endif
 
 #ifndef HAVE_INET_ATON
 static int inet_aton(const char *cp, struct in_addr *ia)

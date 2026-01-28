@@ -16,10 +16,21 @@
 #include "uae/types.h"
 
 #ifdef _WIN32
+#if defined(_MSC_VER)
 #include <stdlib.h>
-#define uae_bswap_16 _byteswap_uint16
-#define uae_bswap_32 _byteswap_uint32
+#define uae_bswap_16 _byteswap_ushort
+#define uae_bswap_32 _byteswap_ulong
 #define uae_bswap_64 _byteswap_uint64
+#elif defined(__GNUC__)
+#define uae_bswap_16 __builtin_bswap16
+#define uae_bswap_32 __builtin_bswap32
+#define uae_bswap_64 __builtin_bswap64
+#else
+#include <stdlib.h>
+#define uae_bswap_16 _byteswap_ushort
+#define uae_bswap_32 _byteswap_ulong
+#define uae_bswap_64 _byteswap_uint64
+#endif
 #elif defined(__APPLE__)
 #include <libkern/OSByteOrder.h>
 #define uae_bswap_16 OSSwapInt16

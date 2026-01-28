@@ -66,7 +66,9 @@
 #if defined(__linux__)
 #include <linux/kd.h>
 #endif
+#if !defined(_WIN32)
 #include <sys/ioctl.h>
+#endif
 
 #include "fsdb.h"
 #include "fsdb_host.h"
@@ -640,7 +642,6 @@ void fixup_prefs (struct uae_prefs *p, bool userconfig)
 	if (p->socket_emu) {
 		write_log (_T("Compile-time option of BSDSOCKET_SUPPORTED was not enabled.  You can't use bsd-socket emulation.\n"));
 		p->socket_emu = 0;
-		err = 1;
 	}
 #endif
 	if (p->socket_emu && p->uaeboard >= 3) {

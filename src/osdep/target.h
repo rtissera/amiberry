@@ -234,6 +234,21 @@ typedef long LONG;
 #define WINAPI
 typedef long GUID;
 typedef wchar_t* LPCWSTR;
+#else
+#ifdef LIBRETRO
+#if !defined(GUID_DEFINED) && !defined(_GUID_DEFINED)
+typedef struct GUID
+{
+	unsigned long  Data1;
+	unsigned short Data2;
+	unsigned short Data3;
+	unsigned char  Data4[8];
+} GUID;
+#define GUID_DEFINED
+#endif
+#else
+#include <guiddef.h>
+#endif
 #endif
 
 #define MAX_SOUND_DEVICES 100
