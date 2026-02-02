@@ -346,7 +346,14 @@ MIDFUNC(2,mov_l_rm,(W4 d, IMM s))
 {
 	CLOBBER_MOV;
 	d=writereg(d,4);
-	raw_mov_l_rm(d,s);
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	if (d == PC_P) {
+		raw_mov_q_rm(d, s);
+	} else
+#endif
+	{
+		raw_mov_l_rm(d, s);
+	}
 	unlock2(d);
 }
 
@@ -824,9 +831,19 @@ MIDFUNC(3,cmov_l_rr,(RW4 d, RR4 s, IMM cc))
 	if (d==s)
 		return;
 	CLOBBER_CMOV;
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	const bool use_ptr = (d == PC_P) || (s == PC_P);
+#endif
 	s=readreg(s,4);
 	d=rmw(d,4,4);
-	raw_cmov_l_rr(d,s,cc);
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	if (use_ptr) {
+		raw_cmov_q_rr(d, s, cc);
+	} else
+#endif
+	{
+		raw_cmov_l_rr(d, s, cc);
+	}
 	unlock2(s);
 	unlock2(d);
 }
@@ -1100,6 +1117,19 @@ MIDFUNC(4,mov_l_rrm_indexed,(W4 d,RR4 baser, RR4 index, IMM factor))
 	unlock2(index);
 }
 
+MIDFUNC(4,mov_l_rrm_indexed_ptr,(W4 d,RR4 baser, RR4 index, IMM factor))
+{
+	CLOBBER_MOV;
+	baser=readreg(baser,4);
+	index=readreg(index,4);
+	d=writereg(d,4);
+
+	raw_mov_l_rrm_indexed_ptr(d,baser,index,factor);
+	unlock2(d);
+	unlock2(baser);
+	unlock2(index);
+}
+
 MIDFUNC(4,mov_w_rrm_indexed,(W2 d, RR4 baser, RR4 index, IMM factor))
 {
 	CLOBBER_MOV;
@@ -1113,6 +1143,19 @@ MIDFUNC(4,mov_w_rrm_indexed,(W2 d, RR4 baser, RR4 index, IMM factor))
 	unlock2(index);
 }
 
+MIDFUNC(4,mov_w_rrm_indexed_ptr,(W2 d, RR4 baser, RR4 index, IMM factor))
+{
+	CLOBBER_MOV;
+	baser=readreg(baser,4);
+	index=readreg(index,4);
+	d=writereg(d,2);
+
+	raw_mov_w_rrm_indexed_ptr(d,baser,index,factor);
+	unlock2(d);
+	unlock2(baser);
+	unlock2(index);
+}
+
 MIDFUNC(4,mov_b_rrm_indexed,(W1 d, RR4 baser, RR4 index, IMM factor))
 {
 	CLOBBER_MOV;
@@ -1121,6 +1164,20 @@ MIDFUNC(4,mov_b_rrm_indexed,(W1 d, RR4 baser, RR4 index, IMM factor))
 	d=writereg(d,1);
 
 	raw_mov_b_rrm_indexed(d,baser,index,factor);
+
+	unlock2(d);
+	unlock2(baser);
+	unlock2(index);
+}
+
+MIDFUNC(4,mov_b_rrm_indexed_ptr,(W1 d, RR4 baser, RR4 index, IMM factor))
+{
+	CLOBBER_MOV;
+	baser=readreg(baser,4);
+	index=readreg(index,4);
+	d=writereg(d,1);
+
+	raw_mov_b_rrm_indexed_ptr(d,baser,index,factor);
 
 	unlock2(d);
 	unlock2(baser);
@@ -1145,6 +1202,22 @@ MIDFUNC(4,mov_l_mrr_indexed,(RR4 baser, RR4 index, IMM factor, RR4 s))
 	unlock2(index);
 }
 
+MIDFUNC(4,mov_l_mrr_indexed_ptr,(RR4 baser, RR4 index, IMM factor, RR4 s))
+{
+	CLOBBER_MOV;
+	baser=readreg(baser,4);
+	index=readreg(index,4);
+	s=readreg(s,4);
+
+	Dif (baser==s || index==s)
+		jit_abort("mov_l_mrr_indexed_ptr");
+
+	raw_mov_l_mrr_indexed_ptr(baser,index,factor,s);
+	unlock2(s);
+	unlock2(baser);
+	unlock2(index);
+}
+
 MIDFUNC(4,mov_w_mrr_indexed,(RR4 baser, RR4 index, IMM factor, RR2 s))
 {
 	CLOBBER_MOV;
@@ -1158,6 +1231,19 @@ MIDFUNC(4,mov_w_mrr_indexed,(RR4 baser, RR4 index, IMM factor, RR2 s))
 	unlock2(index);
 }
 
+MIDFUNC(4,mov_w_mrr_indexed_ptr,(RR4 baser, RR4 index, IMM factor, RR2 s))
+{
+	CLOBBER_MOV;
+	baser=readreg(baser,4);
+	index=readreg(index,4);
+	s=readreg(s,2);
+
+	raw_mov_w_mrr_indexed_ptr(baser,index,factor,s);
+	unlock2(s);
+	unlock2(baser);
+	unlock2(index);
+}
+
 MIDFUNC(4,mov_b_mrr_indexed,(RR4 baser, RR4 index, IMM factor, RR1 s))
 {
 	CLOBBER_MOV;
@@ -1166,6 +1252,19 @@ MIDFUNC(4,mov_b_mrr_indexed,(RR4 baser, RR4 index, IMM factor, RR1 s))
 	index=readreg(index,4);
 
 	raw_mov_b_mrr_indexed(baser,index,factor,s);
+	unlock2(s);
+	unlock2(baser);
+	unlock2(index);
+}
+
+MIDFUNC(4,mov_b_mrr_indexed_ptr,(RR4 baser, RR4 index, IMM factor, RR1 s))
+{
+	CLOBBER_MOV;
+	s=readreg(s,1);
+	baser=readreg(baser,4);
+	index=readreg(index,4);
+
+	raw_mov_b_mrr_indexed_ptr(baser,index,factor,s);
 	unlock2(s);
 	unlock2(baser);
 	unlock2(index);
@@ -1288,7 +1387,7 @@ MIDFUNC(5,mov_b_brrm_indexed,(W1 d, IMM base, RR4 baser, RR4 index, IMM factor))
 }
 
 /* Read a long from base+factor*index */
-MIDFUNC(4,mov_l_rm_indexed,(W4 d, IMM base, RR4 index, IMM factor))
+MIDFUNC(4,mov_l_rm_indexed,(W4 d, MEMPTR base, RR4 index, IMM factor))
 {
 	int indexreg=index;
 
@@ -1307,6 +1406,26 @@ MIDFUNC(4,mov_l_rm_indexed,(W4 d, IMM base, RR4 index, IMM factor))
 	unlock2(d);
 }
 
+/* Read a quad from base+factor*index */
+MIDFUNC(4,mov_q_rm_indexed,(W4 d, MEMPTR base, RR4 index, IMM factor))
+{
+	int indexreg=index;
+
+	if (isconst(index)) {
+		COMPCALL(mov_l_rm)(d,base+factor*live.state[index].val);
+		return;
+	}
+
+	CLOBBER_MOV;
+	index=readreg_offset(index,4);
+	base+=get_offset(indexreg)*factor;
+	d=writereg(d,4);
+
+	raw_mov_q_rm_indexed(d,base,index,factor);
+	unlock2(index);
+	unlock2(d);
+}
+
 /* read the long at the address contained in s+offset and store in d */
 MIDFUNC(3,mov_l_rR,(W4 d, RR4 s, IMM offset))
 {
@@ -1319,6 +1438,22 @@ MIDFUNC(3,mov_l_rR,(W4 d, RR4 s, IMM offset))
 	d=writereg(d,4);
 
 	raw_mov_l_rR(d,s,offset);
+	unlock2(d);
+	unlock2(s);
+}
+
+/* read the quad at the address contained in s+offset and store in d */
+MIDFUNC(3,mov_q_rR,(W4 d, RR4 s, IMM offset))
+{
+	if (isconst(s)) {
+		COMPCALL(mov_l_rm)(d,live.state[s].val+offset);
+		return;
+	}
+	CLOBBER_MOV;
+	s=readreg(s,4);
+	d=writereg(d,4);
+
+	raw_mov_q_rR(d,s,offset);
 	unlock2(d);
 	unlock2(s);
 }
@@ -1477,6 +1612,26 @@ MIDFUNC(3,mov_l_Rr,(RR4 d, RR4 s, IMM offset))
 	unlock2(s);
 }
 
+MIDFUNC(3,mov_l_Rr_ptr,(RR4 d, RR4 s, IMM offset))
+{
+	if (isconst(d)) {
+		COMPCALL(mov_l_mr)(live.state[d].val+offset,s);
+		return;
+	}
+	if (isconst(s)) {
+		COMPCALL(mov_l_Ri)(d,live.state[s].val,offset);
+		return;
+	}
+
+	CLOBBER_MOV;
+	s=readreg(s,4);
+	d=readreg(d,4);
+
+	raw_mov_l_Rr_ptr(d,s,offset);
+	unlock2(d);
+	unlock2(s);
+}
+
 MIDFUNC(3,mov_w_Rr,(RR4 d, RR2 s, IMM offset))
 {
 	if (isconst(d)) {
@@ -1492,6 +1647,25 @@ MIDFUNC(3,mov_w_Rr,(RR4 d, RR2 s, IMM offset))
 	s=readreg(s,2);
 	d=readreg(d,4);
 	raw_mov_w_Rr(d,s,offset);
+	unlock2(d);
+	unlock2(s);
+}
+
+MIDFUNC(3,mov_w_Rr_ptr,(RR4 d, RR2 s, IMM offset))
+{
+	if (isconst(d)) {
+		COMPCALL(mov_w_mr)(live.state[d].val+offset,s);
+		return;
+	}
+	if (isconst(s)) {
+		COMPCALL(mov_w_Ri)(d,(uae_u16)live.state[s].val,offset);
+		return;
+	}
+
+	CLOBBER_MOV;
+	s=readreg(s,2);
+	d=readreg(d,4);
+	raw_mov_w_Rr_ptr(d,s,offset);
 	unlock2(d);
 	unlock2(s);
 }
@@ -1515,12 +1689,40 @@ MIDFUNC(3,mov_b_Rr,(RR4 d, RR1 s, IMM offset))
 	unlock2(s);
 }
 
+MIDFUNC(3,mov_b_Rr_ptr,(RR4 d, RR1 s, IMM offset))
+{
+	if (isconst(d)) {
+		COMPCALL(mov_b_mr)(live.state[d].val+offset,s);
+		return;
+	}
+	if (isconst(s)) {
+		COMPCALL(mov_b_Ri)(d,(uae_u8)live.state[s].val,offset);
+		return;
+	}
+
+	CLOBBER_MOV;
+	s=readreg(s,1);
+	d=readreg(d,4);
+	raw_mov_b_Rr_ptr(d,s,offset);
+	unlock2(d);
+	unlock2(s);
+}
+
 MIDFUNC(3,lea_l_brr,(W4 d, RR4 s, IMM offset))
 {
 	if (isconst(s)) {
 		COMPCALL(mov_l_ri)(d,live.state[s].val+offset);
 		return;
 	}
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	if (d==s && d==PC_P) {
+		CLOBBER_LEA;
+		s = rmw(s, 4, 4);
+		raw_add_q_ri(s, offset);
+		unlock2(s);
+		return;
+	}
+#endif
 #if USE_OFFSET
 	if (d==s) {
 		add_offset(d,offset);
@@ -1665,6 +1867,28 @@ MIDFUNC(2,mov_l_rr,(W4 d, RR4 s))
 	}
 	olds=s;
 	disassociate(d);
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	if (d == PC_P || s == PC_P) {
+		s = readreg_offset(s, 4);
+		live.state[d].realreg = s;
+		live.state[d].realind = live.nat[s].nholds;
+		live.state[d].val = live.state[olds].val;
+		if (d == PC_P) {
+			live.state[d].validsize = 8;
+			live.state[d].dirtysize = 8;
+		} else {
+			live.state[d].validsize = 4;
+			live.state[d].dirtysize = 4;
+		}
+		set_status(d, DIRTY);
+		live.nat[s].holds[live.nat[s].nholds] = d;
+		live.nat[s].nholds++;
+		log_clobberreg(d);
+		jit_log2("Added %d to nreg %d(%d), now holds %d regs", d,s,live.state[d].realind,live.nat[s].nholds);
+		unlock2(s);
+		return;
+	}
+#endif
 	s=readreg_offset(s,4);
 	live.state[d].realreg=s;
 	live.state[d].realind=live.nat[s].nholds;
@@ -1680,16 +1904,54 @@ MIDFUNC(2,mov_l_rr,(W4 d, RR4 s))
 	unlock2(s);
 }
 
+MIDFUNC(2,mov_q_rr,(W4 d, RR4 s))
+{
+	int olds;
+
+	if (d == s)
+		return;
+	if (isconst(s)) {
+		COMPCALL(mov_q_ri)(d, live.state[s].val);
+		return;
+	}
+	olds = s;
+	disassociate(d);
+	s = readreg_offset(s, 4);
+	live.state[d].realreg = s;
+	live.state[d].realind = live.nat[s].nholds;
+	live.state[d].val = live.state[olds].val;
+	live.state[d].validsize = 8;
+	live.state[d].dirtysize = 8;
+	set_status(d, DIRTY);
+	live.nat[s].holds[live.nat[s].nholds] = d;
+	live.nat[s].nholds++;
+	log_clobberreg(d);
+	jit_log2("Added %d to nreg %d(%d), now holds %d regs", d,s,live.state[d].realind,live.nat[s].nholds);
+	unlock2(s);
+}
+
 MIDFUNC(2,mov_l_mr,(IMM d, RR4 s))
 {
 	if (isconst(s)) {
-		COMPCALL(mov_l_mi)(d,live.state[s].val);
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+		if (s == PC_P) {
+			raw_mov_q_mi(d, live.state[s].val);
+			return;
+		}
+#endif
+		COMPCALL(mov_l_mi)(d, live.state[s].val);
 		return;
 	}
 	CLOBBER_MOV;
-	s=readreg(s,4);
-
-	raw_mov_l_mr(d,s);
+	s = readreg(s, 4);
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	if (s == PC_P) {
+		raw_mov_q_mr(d, s);
+	} else
+#endif
+	{
+		raw_mov_l_mr(d, s);
+	}
 	unlock2(s);
 }
 
@@ -1742,6 +2004,18 @@ MIDFUNC(2,mov_b_rm,(W1 d, IMM s))
 MIDFUNC(2,mov_l_ri,(W4 d, IMM s))
 {
 	set_const(d,s);
+	return;
+}
+
+MIDFUNC(2,mov_q_ri,(W4 d, IMM s))
+{
+	set_const(d,s);
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	if (d == PC_P) {
+		live.state[d].validsize = 8;
+		live.state[d].dirtysize = 8;
+	}
+#endif
 	return;
 }
 
@@ -1840,6 +2114,20 @@ MIDFUNC(2,and_l_ri,(RW4 d, IMM i))
 	d=rmw(d,4,4);
 
 	raw_and_l_ri(d,i);
+	unlock2(d);
+}
+
+MIDFUNC(2,and_q_ri,(RW4 d, IMM i))
+{
+	if (isconst(d) && !needflags) {
+		live.state[d].val &= i;
+		return;
+	}
+
+	CLOBBER_AND;
+	d=rmw(d,4,4);
+
+	raw_and_q_ri(d,i);
 	unlock2(d);
 }
 
@@ -1972,6 +2260,21 @@ MIDFUNC(2,adc_b,(RW1 d, RR1 s))
 
 MIDFUNC(2,add_l,(RW4 d, RR4 s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	if (d == PC_P) {
+		if (isconst(s)) {
+			COMPCALL(add_q_ri)(d, live.state[s].val);
+			return;
+		}
+		CLOBBER_ADD;
+		s = readreg(s, 4);
+		d = rmw(d, 4, 4);
+		raw_add_q(d, s);
+		unlock2(d);
+		unlock2(s);
+		return;
+	}
+#endif
 	if (isconst(s)) {
 		COMPCALL(add_l_ri)(d,live.state[s].val);
 		return;
@@ -1982,6 +2285,23 @@ MIDFUNC(2,add_l,(RW4 d, RR4 s))
 	d=rmw(d,4,4);
 
 	raw_add_l(d,s);
+
+	unlock2(d);
+	unlock2(s);
+}
+
+MIDFUNC(2,add_q,(RW4 d, RR4 s))
+{
+	if (isconst(s)) {
+		COMPCALL(add_q_ri)(d,live.state[s].val);
+		return;
+	}
+
+	CLOBBER_ADD;
+	s=readreg(s,4);
+	d=rmw(d,4,4);
+
+	raw_add_q(d,s);
 
 	unlock2(d);
 	unlock2(s);
@@ -2021,6 +2341,21 @@ MIDFUNC(2,add_b,(RW1 d, RR1 s))
 
 MIDFUNC(2,sub_l_ri,(RW4 d, IMM i))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	if (d == PC_P) {
+		if (!i && !needflags)
+			return;
+		if (isconst(d) && !needflags) {
+			live.state[d].val -= i;
+			return;
+		}
+		CLOBBER_SUB;
+		d = rmw(d, 4, 4);
+		raw_sub_q_ri(d, i);
+		unlock2(d);
+		return;
+	}
+#endif
 	if (!i && !needflags)
 		return;
 	if (isconst(d) && !needflags) {
@@ -2068,6 +2403,21 @@ MIDFUNC(2,sub_b_ri,(RW1 d, IMM i))
 
 MIDFUNC(2,add_l_ri,(RW4 d, IMM i))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	if (d == PC_P) {
+		if (!i && !needflags)
+			return;
+		if (isconst(d) && !needflags) {
+			live.state[d].val += i;
+			return;
+		}
+		CLOBBER_ADD;
+		d = rmw(d, 4, 4);
+		raw_add_q_ri(d, i);
+		unlock2(d);
+		return;
+	}
+#endif
 	if (!i && !needflags)
 		return;
 	if (isconst(d) && !needflags) {
@@ -2083,6 +2433,26 @@ MIDFUNC(2,add_l_ri,(RW4 d, IMM i))
 	CLOBBER_ADD;
 	d=rmw(d,4,4);
 	raw_add_l_ri(d,i);
+	unlock2(d);
+}
+
+MIDFUNC(2,add_q_ri,(RW4 d, IMM i))
+{
+	if (!i && !needflags)
+		return;
+	if (isconst(d) && !needflags) {
+		live.state[d].val+=i;
+		return;
+	}
+#if USE_OFFSET
+	if (!needflags) {
+		add_offset(d,i);
+		return;
+	}
+#endif
+	CLOBBER_ADD;
+	d=rmw(d,4,4);
+	raw_add_q_ri(d,i);
 	unlock2(d);
 }
 

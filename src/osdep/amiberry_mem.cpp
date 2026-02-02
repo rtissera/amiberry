@@ -573,7 +573,18 @@ static int doinit_shm ()
 		write_log(_T("MMAN: Our special area: %p-%p (0x%08x %dM)\n"),
 			natmem_offset, natmem_offset + totalsize,
 			totalsize, totalsize / (1024 * 1024));
+#if defined(LIBRETRO) && defined(CPU_X86_64)
 		canbang = jit_direct_compatible_memory;
+		const char* jit_direct_env = getenv("AMIBERRY_JIT_DIRECT");
+		if (jit_direct_env && *jit_direct_env == '0') {
+			canbang = false;
+			write_log(_T("LIBRETRO: JIT direct forced OFF via AMIBERRY_JIT_DIRECT\n"));
+		}
+		write_log(_T("LIBRETRO: JIT direct %s (canbang=%d) on x86_64\n"),
+			canbang ? _T("enabled") : _T("disabled"), canbang);
+#else
+		canbang = jit_direct_compatible_memory;
+#endif
 	}
 
 	return canbang;

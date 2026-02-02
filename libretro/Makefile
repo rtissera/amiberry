@@ -68,7 +68,10 @@ FLAGS += -ffunction-sections -fdata-sections
 LDFLAGS += -Wl,--gc-sections
 
 ifeq ($(DEBUG), 1)
-   FLAGS += -O0 -g
+   FLAGS += -O0 -g3 -ggdb3 -fno-omit-frame-pointer -fno-optimize-sibling-calls
+   FLAGS += -fno-inline -fno-inline-functions -fno-inline-functions-called-once
+   SHARED := $(filter-out -s,$(SHARED))
+   LDFLAGS += -g
 else
    FLAGS += -O3 -DNDEBUG
 endif
@@ -306,16 +309,6 @@ SOURCES_JIT := $(AMIBERRY_DIR)/src/jit/compemu.cpp \
                $(AMIBERRY_DIR)/src/jit/compemu_fpp.cpp \
                $(AMIBERRY_DIR)/src/jit/compemu_support.cpp \
                $(AMIBERRY_DIR)/src/jit/compstbl.cpp
-
-# Disable JIT for 64-bit x86 libretro builds (addressing 32-bit pointer checks).
-ifneq (,$(findstring x86_64,$(ARCH)))
-   FLAGS += -DLIBRETRO_NO_JIT
-   SOURCES_JIT :=
-endif
-ifneq (,$(findstring amd64,$(ARCH)))
-   FLAGS += -DLIBRETRO_NO_JIT
-   SOURCES_JIT :=
-endif
 
 SOURCES_PPC := $(AMIBERRY_DIR)/src/ppc/ppc.cpp \
               $(AMIBERRY_DIR)/src/ppc/ppcd.cpp

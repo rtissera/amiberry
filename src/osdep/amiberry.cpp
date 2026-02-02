@@ -4710,6 +4710,11 @@ static bool locate_amiberry_conf(const bool portable_mode)
 	}
 	else
 	{
+#ifdef LIBRETRO
+		// Respect AMIBERRY_CONFIG_DIR for libretro builds even in non-portable mode.
+		amiberry_conf_file = config_path + "/amiberry.conf";
+		amiberry_ini_file = config_path + "/amiberry.ini";
+#else
 #ifdef __MACH__
 		const std::string amiberry_dir = "Amiberry";
 #elif defined(__ANDROID__)
@@ -4732,6 +4737,7 @@ static bool locate_amiberry_conf(const bool portable_mode)
 		amiberry_conf_file = xdg_config_home + "/amiberry.conf";
 		amiberry_ini_file = xdg_config_home + "/amiberry.ini";
         config_path = xdg_config_home;
+#endif
 	}
 	return my_existsfile2(amiberry_conf_file.c_str());
 }

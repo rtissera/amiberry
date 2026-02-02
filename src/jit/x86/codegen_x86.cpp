@@ -111,7 +111,11 @@
  * since r/m bits 100 implies SIB byte. Simplest fix is to not use these
  * registers. Also note that these registers are listed in the freescratch
  * function as well. */
+#if defined(LIBRETRO)
+uae_s8 always_used[] = { ESP_INDEX, R12_INDEX, R11_INDEX, -1 };
+#else
 uae_s8 always_used[] = { ESP_INDEX, R12_INDEX, -1 };
+#endif
 #else
 uae_s8 always_used[] = { ESP_INDEX, -1 };
 #endif
@@ -201,7 +205,11 @@ static const uae_u8 need_to_preserve[]={0,0,0,1,0,1,1,1};
 /* The address override prefix causes a 5 cycles penalty on Intel Core
    processors. Another solution would be to decompose the load in an LEA,
    MOV (to zero-extend), MOV (from memory): is it better? */
+#if defined(LIBRETRO)
+#define ADDR32
+#else
 #define ADDR32					x86_emit_byte(0x67),
+#endif
 #else
 #define ADDR32
 #endif
@@ -274,6 +282,7 @@ static inline void x86_64_prefix(
 #define compemu_raw_mov_l_mi(a,b)		raw_mov_l_mi(a,b)
 #define compemu_raw_mov_l_mr(a,b)		raw_mov_l_mr(a,b)
 #define compemu_raw_mov_l_ri(a,b)		raw_mov_l_ri(a,b)
+#define compemu_raw_mov_q_ri(a,b)		raw_mov_q_ri(a,b)
 #define compemu_raw_mov_l_rm(a,b)		raw_mov_l_rm(a,b)
 #define compemu_raw_mov_l_rr(a,b)		raw_mov_l_rr(a,b)
 #define compemu_raw_mov_w_mr(a,b)		raw_mov_w_mr(a,b)
@@ -282,11 +291,35 @@ static inline void x86_64_prefix(
 #define compemu_raw_zero_extend_16_rr(a,b)	raw_zero_extend_16_rr(a,b)
 #define compemu_raw_lea_l_rr_indexed(a,b,c,d)	raw_lea_l_rr_indexed(a,b,c,d)
 
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+#define compemu_raw_mov_ptr_mi(a,b)	raw_mov_q_mi(a,b)
+#define compemu_raw_mov_ptr_mr(a,b)	raw_mov_q_mr(a,b)
+#define compemu_raw_mov_ptr_rm(a,b)	raw_mov_q_rm(a,b)
+#else
+#define compemu_raw_mov_ptr_mi(a,b)	raw_mov_l_mi(a,b)
+#define compemu_raw_mov_ptr_mr(a,b)	raw_mov_l_mr(a,b)
+#define compemu_raw_mov_ptr_rm(a,b)	raw_mov_l_rm(a,b)
+#endif
+
 static void jit_fail(const char *msg, const char *file, int line, const char *function)
 {
 	jit_abort("failure in function %s from file %s at line %d: %s",
 			function, file, line, msg);
 }
+
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+static inline void x86_load_abs_addr(uintptr addr)
+{
+	/* HACK: recover sign-extended 32-bit absolute addresses on libretro x86_64. */
+	if ((addr & 0xffffffff00000000ULL) == 0xffffffff00000000ULL) {
+		static uintptr jit_hi_base = 0;
+		if (!jit_hi_base)
+			jit_hi_base = ((uintptr)&regs) & 0xffffffff00000000ULL;
+		addr = jit_hi_base | (addr & 0xffffffffULL);
+	}
+	MOVQir(addr, X86_R11);
+}
+#endif
 
 LOWFUNC(NONE,WRITE,1,raw_push_l_r,(R4 r))
 {
@@ -308,7 +341,10 @@ LOWFUNC(NONE,READ,1,raw_pop_l_r,(R4 r))
 
 LOWFUNC(NONE,READ,1,raw_pop_l_m,(MEMW d))
 {
-#if defined(CPU_x86_64)
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	POPQm(0, X86_R11, X86_NOREG, 1);
+#elif defined(CPU_x86_64)
 	POPQm(d, X86_NOREG, X86_NOREG, 1);
 #else
 	POPLm(d, X86_NOREG, X86_NOREG, 1);
@@ -362,27 +398,78 @@ LOWFUNC(WRITE,NONE,2,raw_sub_w_ri,(RW2 d, IMM i))
 
 LOWFUNC(NONE,READ,2,raw_mov_l_rm,(W4 d, MEMR s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(s);
+	MOVLmr(0, X86_R11, X86_NOREG, 1, d);
+#else
 	ADDR32 MOVLmr(s, X86_NOREG, X86_NOREG, 1, d);
+#endif
 }
+
+#if defined(CPU_x86_64)
+LOWFUNC(NONE,READ,2,raw_mov_q_rm,(W4 d, MEMR s))
+{
+#if defined(LIBRETRO)
+	x86_load_abs_addr(s);
+	MOVQmr(0, X86_R11, X86_NOREG, 1, d);
+#else
+	ADDR32 MOVQmr(s, X86_NOREG, X86_NOREG, 1, d);
+#endif
+}
+#endif
 
 LOWFUNC(NONE,WRITE,2,raw_mov_l_mi,(MEMW d, IMM s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	MOVLim(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 MOVLim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
+
+#if defined(CPU_x86_64)
+LOWFUNC(NONE,WRITE,2,raw_mov_q_mi,(MEMW d, IMM s))
+{
+#if defined(LIBRETRO)
+	if (s > (IMM)0x7fffffffLL || s < (IMM)-0x80000000LL)
+		jit_fail("raw_mov_q_mi immediate out of 32-bit range", __FILE__, __LINE__, __FUNCTION__);
+	x86_load_abs_addr(d);
+	MOVQim((uae_u32)s, 0, X86_R11, X86_NOREG, 1);
+#else
+	ADDR32 MOVQim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
+}
+#endif
 
 LOWFUNC(NONE,WRITE,2,raw_mov_w_mi,(MEMW d, IMM s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	MOVWim(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 MOVWim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(NONE,WRITE,2,raw_mov_b_mi,(MEMW d, IMM s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	MOVBim(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 MOVBim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(WRITE,RMW,2,raw_rol_b_mi,(MEMRW d, IMM i))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	ROLBim(i, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 ROLBim(i, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(WRITE,NONE,2,raw_rol_b_ri,(RW1 r, IMM i))
@@ -442,7 +529,12 @@ LOWFUNC(WRITE,NONE,2,raw_ror_w_ri,(RW2 r, IMM i))
 
 LOWFUNC(WRITE,READ,2,raw_or_l_rm,(RW4 d, MEMR s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(s);
+	ORLmr(0, X86_R11, X86_NOREG, 1, d);
+#else
 	ADDR32 ORLmr(s, X86_NOREG, X86_NOREG, 1, d);
+#endif
 }
 
 LOWFUNC(WRITE,NONE,2,raw_ror_l_ri,(RW4 r, IMM i))
@@ -562,7 +654,12 @@ LOWFUNC(READ,NONE,2,raw_setcc,(W1 d, IMM cc))
 
 LOWFUNC(READ,WRITE,2,raw_setcc_m,(MEMW d, IMM cc))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	SETCCim(cc, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 SETCCim(cc, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(READ,NONE,3,raw_cmov_l_rr,(RW4 d, R4 s, IMM cc))
@@ -577,6 +674,20 @@ LOWFUNC(READ,NONE,3,raw_cmov_l_rr,(RW4 d, R4 s, IMM cc))
 	}
 }
 
+#if defined(CPU_x86_64)
+LOWFUNC(READ,NONE,3,raw_cmov_q_rr,(RW4 d, R4 s, IMM cc))
+{
+	if (have_cmov)
+		CMOVQrr(cc, s, d);
+	else { /* replacement using branch and mov */
+		uae_s8 *target_p = (uae_s8 *)x86_get_target() + 1;
+		JCCSii(cc^1, 0);
+		MOVQrr(s, d);
+		*target_p = JITPTR x86_get_target() - (JITPTR target_p + 1);
+	}
+}
+#endif
+
 LOWFUNC(WRITE,NONE,2,raw_bsf_l_rr,(W4 d, R4 s))
 {
 	BSFLrr(s, d);
@@ -589,12 +700,20 @@ LOWFUNC(NONE,NONE,2,raw_sign_extend_32_rr,(W4 d, R4 s))
 
 LOWFUNC(NONE,NONE,2,raw_sign_extend_16_rr,(W4 d, R2 s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVSWQrr(s, d);
+#else
 	MOVSWLrr(s, d);
+#endif
 }
 
 LOWFUNC(NONE,NONE,2,raw_sign_extend_8_rr,(W4 d, R1 s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVSBQrr(s, d);
+#else
 	MOVSBLrr(s, d);
+#endif
 }
 
 LOWFUNC(NONE,NONE,2,raw_zero_extend_16_rr,(W4 d, R2 s))
@@ -648,9 +767,27 @@ LOWFUNC(NONE,READ,4,raw_mov_l_rrm_indexed,(W4 d,R4 baser, R4 index, IMM factor))
 	ADDR32 MOVLmr(0, baser, index, factor, d);
 }
 
+LOWFUNC(NONE,READ,4,raw_mov_l_rrm_indexed_ptr,(W4 d,R4 baser, R4 index, IMM factor))
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVLmr(0, baser, index, factor, d);
+#else
+	ADDR32 MOVLmr(0, baser, index, factor, d);
+#endif
+}
+
 LOWFUNC(NONE,READ,4,raw_mov_w_rrm_indexed,(W2 d, R4 baser, R4 index, IMM factor))
 {
 	ADDR32 MOVWmr(0, baser, index, factor, d);
+}
+
+LOWFUNC(NONE,READ,4,raw_mov_w_rrm_indexed_ptr,(W2 d, R4 baser, R4 index, IMM factor))
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVWmr(0, baser, index, factor, d);
+#else
+	ADDR32 MOVWmr(0, baser, index, factor, d);
+#endif
 }
 
 LOWFUNC(NONE,READ,4,raw_mov_b_rrm_indexed,(W1 d, R4 baser, R4 index, IMM factor))
@@ -658,9 +795,27 @@ LOWFUNC(NONE,READ,4,raw_mov_b_rrm_indexed,(W1 d, R4 baser, R4 index, IMM factor)
 	ADDR32 MOVBmr(0, baser, index, factor, d);
 }
 
+LOWFUNC(NONE,READ,4,raw_mov_b_rrm_indexed_ptr,(W1 d, R4 baser, R4 index, IMM factor))
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVBmr(0, baser, index, factor, d);
+#else
+	ADDR32 MOVBmr(0, baser, index, factor, d);
+#endif
+}
+
 LOWFUNC(NONE,WRITE,4,raw_mov_l_mrr_indexed,(R4 baser, R4 index, IMM factor, R4 s))
 {
 	ADDR32 MOVLrm(s, 0, baser, index, factor);
+}
+
+LOWFUNC(NONE,WRITE,4,raw_mov_l_mrr_indexed_ptr,(R4 baser, R4 index, IMM factor, R4 s))
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVLrm(s, 0, baser, index, factor);
+#else
+	ADDR32 MOVLrm(s, 0, baser, index, factor);
+#endif
 }
 
 LOWFUNC(NONE,WRITE,4,raw_mov_w_mrr_indexed,(R4 baser, R4 index, IMM factor, R2 s))
@@ -668,9 +823,27 @@ LOWFUNC(NONE,WRITE,4,raw_mov_w_mrr_indexed,(R4 baser, R4 index, IMM factor, R2 s
 	ADDR32 MOVWrm(s, 0, baser, index, factor);
 }
 
+LOWFUNC(NONE,WRITE,4,raw_mov_w_mrr_indexed_ptr,(R4 baser, R4 index, IMM factor, R2 s))
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVWrm(s, 0, baser, index, factor);
+#else
+	ADDR32 MOVWrm(s, 0, baser, index, factor);
+#endif
+}
+
 LOWFUNC(NONE,WRITE,4,raw_mov_b_mrr_indexed,(R4 baser, R4 index, IMM factor, R1 s))
 {
 	ADDR32 MOVBrm(s, 0, baser, index, factor);
+}
+
+LOWFUNC(NONE,WRITE,4,raw_mov_b_mrr_indexed_ptr,(R4 baser, R4 index, IMM factor, R1 s))
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVBrm(s, 0, baser, index, factor);
+#else
+	ADDR32 MOVBrm(s, 0, baser, index, factor);
+#endif
 }
 
 LOWFUNC(NONE,WRITE,5,raw_mov_l_bmrr_indexed,(IMM base, R4 baser, R4 index, IMM factor, R4 s))
@@ -703,19 +876,70 @@ LOWFUNC(NONE,READ,5,raw_mov_b_brrm_indexed,(W1 d, IMM base, R4 baser, R4 index, 
 	ADDR32 MOVBmr(base, baser, index, factor, d);
 }
 
-LOWFUNC(NONE,READ,4,raw_mov_l_rm_indexed,(W4 d, IMM base, R4 index, IMM factor))
+LOWFUNC(NONE,READ,4,raw_mov_l_rm_indexed,(W4 d, MEMPTR base, R4 index, IMM factor))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(base);
+	MOVLmr(0, X86_R11, index, factor, d);
+#else
 	ADDR32 MOVLmr(base, X86_NOREG, index, factor, d);
+#endif
 }
 
-LOWFUNC(NONE,READ,5,raw_cmov_l_rm_indexed,(W4 d, IMM base, R4 index, IMM factor, IMM cond))
+LOWFUNC(NONE,READ,4,raw_mov_q_rm_indexed,(W4 d, MEMPTR base, R4 index, IMM factor))
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(base);
+	MOVQmr(0, X86_R11, index, factor, d);
+#else
+	ADDR32 MOVQmr(base, X86_NOREG, index, factor, d);
+#endif
+}
+
+LOWFUNC(NONE,READ,5,raw_cmov_l_rm_indexed,(W4 d, MEMPTR base, R4 index, IMM factor, IMM cond))
 {
 	if (have_cmov)
+	{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+		x86_load_abs_addr(base);
+		CMOVLmr(cond, 0, X86_R11, index, factor, d);
+#else
 		ADDR32 CMOVLmr(cond, base, X86_NOREG, index, factor, d);
+#endif
+	}
 	else { /* replacement using branch and mov */
 		uae_s8 *target_p = (uae_s8 *)x86_get_target() + 1;
 		JCCSii(cond^1, 0);
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+		x86_load_abs_addr(base);
+		MOVLmr(0, X86_R11, index, factor, d);
+#else
 		ADDR32 MOVLmr(base, X86_NOREG, index, factor, d);
+#endif
+		*target_p = JITPTR x86_get_target() - (JITPTR target_p + 1);
+	}
+}
+
+LOWFUNC(NONE,READ,5,raw_cmov_q_rm_indexed,(W4 d, MEMPTR base, R4 index, IMM factor, IMM cond))
+{
+	if (have_cmov)
+	{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+		x86_load_abs_addr(base);
+		CMOVQmr(cond, 0, X86_R11, index, factor, d);
+#else
+		ADDR32 CMOVQmr(cond, base, X86_NOREG, index, factor, d);
+#endif
+	}
+	else {
+		uae_s8 *target_p = (uae_s8 *)x86_get_target() + 1;
+		JCCSii(cond^1, 0);
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+		x86_load_abs_addr(base);
+		MOVQmr(0, X86_R11, index, factor, d);
+#else
+		ADDR32 MOVQmr(base, X86_NOREG, index, factor, d);
+#endif
 		*target_p = JITPTR x86_get_target() - (JITPTR target_p + 1);
 	}
 }
@@ -723,11 +947,23 @@ LOWFUNC(NONE,READ,5,raw_cmov_l_rm_indexed,(W4 d, IMM base, R4 index, IMM factor,
 LOWFUNC(NONE,READ,3,raw_cmov_l_rm,(W4 d, IMM mem, IMM cond))
 {
 	if (have_cmov)
+	{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+		x86_load_abs_addr(mem);
+		CMOVLmr(cond, 0, X86_R11, X86_NOREG, 1, d);
+#else
 		CMOVLmr(cond, mem, X86_NOREG, X86_NOREG, 1, d);
+#endif
+	}
 	else { /* replacement using branch and mov */
 		uae_s8 *target_p = (uae_s8 *)x86_get_target() + 1;
 		JCCSii(cond^1, 0);
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+		x86_load_abs_addr(mem);
+		MOVLmr(0, X86_R11, X86_NOREG, 1, d);
+#else
 		ADDR32 MOVLmr(mem, X86_NOREG, X86_NOREG, 1, d);
+#endif
 		*target_p = JITPTR x86_get_target() - (JITPTR target_p + 1);
 	}
 }
@@ -735,6 +971,15 @@ LOWFUNC(NONE,READ,3,raw_cmov_l_rm,(W4 d, IMM mem, IMM cond))
 LOWFUNC(NONE,READ,3,raw_mov_l_rR,(W4 d, R4 s, IMM offset))
 {
 	ADDR32 MOVLmr(offset, s, X86_NOREG, 1, d);
+}
+
+LOWFUNC(NONE,READ,3,raw_mov_q_rR,(W4 d, R4 s, IMM offset))
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVQmr(offset, s, X86_NOREG, 1, d);
+#else
+	ADDR32 MOVQmr(offset, s, X86_NOREG, 1, d);
+#endif
 }
 
 LOWFUNC(NONE,READ,3,raw_mov_w_rR,(W2 d, R4 s, IMM offset))
@@ -782,14 +1027,41 @@ LOWFUNC(NONE,WRITE,3,raw_mov_l_Rr,(R4 d, R4 s, IMM offset))
 	ADDR32 MOVLrm(s, offset, d, X86_NOREG, 1);
 }
 
+LOWFUNC(NONE,WRITE,3,raw_mov_l_Rr_ptr,(R4 d, R4 s, IMM offset))
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVLrm(s, offset, d, X86_NOREG, 1);
+#else
+	ADDR32 MOVLrm(s, offset, d, X86_NOREG, 1);
+#endif
+}
+
 LOWFUNC(NONE,WRITE,3,raw_mov_w_Rr,(R4 d, R2 s, IMM offset))
 {
 	ADDR32 MOVWrm(s, offset, d, X86_NOREG, 1);
 }
 
+LOWFUNC(NONE,WRITE,3,raw_mov_w_Rr_ptr,(R4 d, R2 s, IMM offset))
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVWrm(s, offset, d, X86_NOREG, 1);
+#else
+	ADDR32 MOVWrm(s, offset, d, X86_NOREG, 1);
+#endif
+}
+
 LOWFUNC(NONE,WRITE,3,raw_mov_b_Rr,(R4 d, R1 s, IMM offset))
 {
 	ADDR32 MOVBrm(s, offset, d, X86_NOREG, 1);
+}
+
+LOWFUNC(NONE,WRITE,3,raw_mov_b_Rr_ptr,(R4 d, R1 s, IMM offset))
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVBrm(s, offset, d, X86_NOREG, 1);
+#else
+	ADDR32 MOVBrm(s, offset, d, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(NONE,NONE,3,raw_lea_l_brr,(W4 d, R4 s, IMM offset))
@@ -842,34 +1114,83 @@ LOWFUNC(NONE,NONE,2,raw_mov_l_rr,(W4 d, R4 s))
 	MOVLrr(s, d);
 }
 
+#if defined(CPU_x86_64)
+LOWFUNC(NONE,NONE,2,raw_mov_q_rr,(W4 d, R4 s))
+{
+	MOVQrr(s, d);
+}
+#endif
+
 LOWFUNC(NONE,WRITE,2,raw_mov_l_mr,(IMM d, R4 s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	MOVLrm(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 MOVLrm(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
+
+#if defined(CPU_x86_64)
+LOWFUNC(NONE,WRITE,2,raw_mov_q_mr,(IMM d, R4 s))
+{
+#if defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	MOVQrm(s, 0, X86_R11, X86_NOREG, 1);
+#else
+	ADDR32 MOVQrm(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
+}
+#endif
 
 LOWFUNC(NONE,WRITE,2,raw_mov_w_mr,(IMM d, R2 s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	MOVWrm(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 MOVWrm(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(NONE,READ,2,raw_mov_w_rm,(W2 d, IMM s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(s);
+	MOVWmr(0, X86_R11, X86_NOREG, 1, d);
+#else
 	ADDR32 MOVWmr(s, X86_NOREG, X86_NOREG, 1, d);
+#endif
 }
 
 LOWFUNC(NONE,WRITE,2,raw_mov_b_mr,(IMM d, R1 s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	MOVBrm(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 MOVBrm(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(NONE,READ,2,raw_mov_b_rm,(W1 d, IMM s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(s);
+	MOVBmr(0, X86_R11, X86_NOREG, 1, d);
+#else
 	ADDR32 MOVBmr(s, X86_NOREG, X86_NOREG, 1, d);
+#endif
 }
 
 LOWFUNC(NONE,NONE,2,raw_mov_l_ri,(W4 d, IMM s))
 {
 	MOVLir(s, d);
+}
+
+LOWFUNC(NONE,NONE,2,raw_mov_q_ri,(W4 d, IMM s))
+{
+	MOVQir(s, d);
 }
 
 LOWFUNC(NONE,NONE,2,raw_mov_w_ri,(W2 d, IMM s))
@@ -884,22 +1205,42 @@ LOWFUNC(NONE,NONE,2,raw_mov_b_ri,(W1 d, IMM s))
 
 LOWFUNC(RMW,RMW,2,raw_adc_l_mi,(MEMRW d, IMM s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	ADCLim(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 ADCLim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(WRITE,RMW,2,raw_add_l_mi,(IMM d, IMM s)) 
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	ADDLim(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 ADDLim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(WRITE,RMW,2,raw_add_w_mi,(IMM d, IMM s)) 
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	ADDWim(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 ADDWim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(WRITE,RMW,2,raw_add_b_mi,(IMM d, IMM s)) 
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	ADDBim(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 ADDBim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(WRITE,NONE,2,raw_test_l_ri,(R4 d, IMM i))
@@ -924,7 +1265,12 @@ LOWFUNC(WRITE,NONE,2,raw_test_b_rr,(R1 d, R1 s))
 
 LOWFUNC(WRITE,READ,2,raw_test_b_mi,(IMM d, IMM s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	TESTBim(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 TESTBim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(WRITE,NONE,2,raw_xor_l_ri,(RW4 d, IMM i))
@@ -997,6 +1343,11 @@ LOWFUNC(WRITE,NONE,2,raw_add_l,(RW4 d, R4 s))
 	ADDLrr(s, d);
 }
 
+LOWFUNC(WRITE,NONE,2,raw_add_q,(RW4 d, R4 s))
+{
+	ADDQrr(s, d);
+}
+
 LOWFUNC(WRITE,NONE,2,raw_add_w,(RW2 d, R2 s))
 {
 	ADDWrr(s, d);
@@ -1012,6 +1363,13 @@ LOWFUNC(WRITE,NONE,2,raw_sub_l_ri,(RW4 d, IMM i))
 	SUBLir(i, d);
 }
 
+#if defined(CPU_x86_64)
+LOWFUNC(WRITE,NONE,2,raw_sub_q_ri,(RW4 d, IMM i))
+{
+	SUBQir(i, d);
+}
+#endif
+
 LOWFUNC(WRITE,NONE,2,raw_sub_b_ri,(RW1 d, IMM i))
 {
 	SUBBir(i, d);
@@ -1020,6 +1378,26 @@ LOWFUNC(WRITE,NONE,2,raw_sub_b_ri,(RW1 d, IMM i))
 LOWFUNC(WRITE,NONE,2,raw_add_l_ri,(RW4 d, IMM i))
 {
 	ADDLir(i, d);
+}
+
+LOWFUNC(WRITE,NONE,2,raw_add_q_ri,(RW4 d, IMM i))
+{
+	/* ADDQir only supports imm32; use R11 scratch for full imm64. */
+#if defined(CPU_x86_64)
+	if ((intptr)i >= INT32_MIN && (intptr)i <= INT32_MAX) {
+		ADDQir(i, d);
+	} else {
+		MOVQir((uintptr)i, R11_INDEX);
+		ADDQrr(R11_INDEX, d);
+	}
+#else
+	ADDQir(i, d);
+#endif
+}
+
+LOWFUNC(WRITE,NONE,2,raw_and_q_ri,(RW4 d, IMM i))
+{
+	ANDQir(i, d);
 }
 
 LOWFUNC(WRITE,NONE,2,raw_add_w_ri,(RW2 d, IMM i))
@@ -1079,7 +1457,12 @@ LOWFUNC(WRITE,NONE,2,raw_cmp_w,(R2 d, R2 s))
 
 LOWFUNC(WRITE,READ,2,raw_cmp_b_mi,(MEMR d, IMM s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	CMPBim(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 CMPBim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(WRITE,NONE,2,raw_cmp_b_ri,(R1 d, IMM i))
@@ -1094,7 +1477,12 @@ LOWFUNC(WRITE,NONE,2,raw_cmp_b,(R1 d, R1 s))
 
 LOWFUNC(WRITE,READ,4,raw_cmp_l_rm_indexed,(R4 d, IMM offset, R4 index, IMM factor))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(offset);
+	CMPLmr(0, X86_R11, index, factor, d);
+#else
 	ADDR32 CMPLmr(offset, X86_NOREG, index, factor, d);
+#endif
 }
 
 LOWFUNC(WRITE,NONE,2,raw_xor_l,(RW4 d, R4 s))
@@ -1114,12 +1502,22 @@ LOWFUNC(WRITE,NONE,2,raw_xor_b,(RW1 d, R1 s))
 
 LOWFUNC(WRITE,RMW,2,raw_sub_l_mi,(MEMRW d, IMM s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	SUBLim(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 SUBLim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(WRITE,READ,2,raw_cmp_l_mi,(MEMR d, IMM s))
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(d);
+	CMPLim(s, 0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 CMPLim(s, d, X86_NOREG, X86_NOREG, 1);
+#endif
 }
 
 LOWFUNC(NONE,NONE,2,raw_xchg_l_rr,(RW4 r1, RW4 r2))
@@ -1145,7 +1543,12 @@ LOWFUNC(WRITE,READ,0,raw_popfl,(void))
 /* Generate floating-point instructions */
 static inline void x86_fadd_m(MEMR s)
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	x86_load_abs_addr(s);
+	FADDLm(0, X86_R11, X86_NOREG, 1);
+#else
 	ADDR32 FADDLm(s,X86_NOREG,X86_NOREG,1);
+#endif
 }
 
 
@@ -1158,9 +1561,14 @@ static inline void raw_call_r(R4 r)
 	CALLsr(r);
 }
 
-static inline void raw_call_m_indexed(uae_u32 base, uae_u32 r, uae_u32 m)
+static inline void raw_call_m_indexed(uintptr base, uae_u32 r, uae_u32 m)
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVQir(base, X86_R11);
+	CALLsm(0, X86_R11, r, m);
+#else
 	ADDR32 CALLsm(base, X86_NOREG, r, m);
+#endif
 }
 
 static inline void raw_jmp_r(R4 r)
@@ -1168,27 +1576,66 @@ static inline void raw_jmp_r(R4 r)
 	JMPsr(r);
 }
 
-static inline void raw_jmp_m_indexed(uae_u32 base, uae_u32 r, uae_u32 m)
+static inline void raw_jmp_m_indexed(uintptr base, uae_u32 r, uae_u32 m)
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVQir(base, X86_R11);
+	JMPsm(0, X86_R11, r, m);
+#else
 	ADDR32 JMPsm(base, X86_NOREG, r, m);
+#endif
 }
 
-static inline void raw_jmp_m(uae_u32 base)
+static inline void raw_jmp_m(uintptr base)
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	MOVQir(base, X86_R11);
+	JMPsm(0, X86_R11, X86_NOREG, 1);
+#else
 	emit_byte(0xff);
 	emit_byte(0x25);
 	emit_long(base);
+#endif
 }
 
 
-static inline void raw_call(uae_u32 t)
+static inline bool x86_rel32_possible(uintptr target)
 {
+#if defined(CPU_x86_64)
+	intptr disp = (intptr)target - (intptr)((uintptr)x86_get_target() + 4);
+	return disp >= -0x80000000LL && disp <= 0x7fffffffLL;
+#else
+	UNUSED(target);
+	return true;
+#endif
+}
+
+static inline void raw_call(uintptr t)
+{
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	if (x86_rel32_possible(t)) {
+		CALLm(t);
+	} else {
+		MOVQir(t, X86_R11);
+		CALLsr(X86_R11);
+	}
+#else
 	ADDR32 CALLm(t);
+#endif
 }
 
-static inline void raw_jmp(uae_u32 t)
+static inline void raw_jmp(uintptr t)
 {
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+	if (x86_rel32_possible(t)) {
+		JMPm(t);
+	} else {
+		MOVQir(t, X86_R11);
+		JMPsr(X86_R11);
+	}
+#else
 	ADDR32 JMPm(t);
+#endif
 }
 
 static inline void raw_jcc_l_oponly(int cc)

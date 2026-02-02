@@ -32,6 +32,11 @@ void device_add_reset(DEVICE_INT p);
 void device_add_reset_imm(DEVICE_INT p);
 void device_add_exit(DEVICE_VOID p, DEVICE_VOID p2);
 
+#if defined(LIBRETRO) && defined(JIT)
+int device_reset_active_idx(void);
+void* device_reset_active_fn(void);
+#endif
+
 #define IRQ_SOURCE_PCI 0
 #define IRQ_SOURCE_SOUND 1
 #define IRQ_SOURCE_NE2000 2

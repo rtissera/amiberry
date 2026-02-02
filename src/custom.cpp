@@ -7203,6 +7203,7 @@ static uae_u32 REGPARAM2 custom_lgeti(uaecptr addr)
 
 static uae_u32 REGPARAM2 custom_wget_1(int hpos, uaecptr addr, int noput, bool isbyte)
 {
+	uaecptr oaddr = addr;
 	uae_u16 v = regs.chipset_latch_rw;
 	int missing;
 #if CUSTOM_DEBUG > 2
@@ -7351,9 +7352,39 @@ writeonly:
 #if CUSTOM_DEBUG > 0
 			write_log(_T("%08X read = %04X. Value written=%04X PC=%08x\n"), 0xdff000 | addr, v, l, M68K_GETPC);
 #endif
-			return v;
+			goto custom_wget_return;
 		}
 	}
+custom_wget_return:
+#if defined(LIBRETRO) && defined(JIT)
+	static bool custom_log_init_done = false;
+	static bool custom_log_enabled = false;
+	static int custom_log_budget = 0;
+	if (!custom_log_init_done) {
+		custom_log_init_done = true;
+		const char* env = getenv("AMIBERRY_JIT_CUSTOM_LOG");
+		if (env && *env && *env != '0') {
+			custom_log_enabled = true;
+			custom_log_budget = atoi(env);
+			if (custom_log_budget <= 0)
+				custom_log_budget = 200;
+		}
+	}
+	if (custom_log_enabled && custom_log_budget > 0) {
+		const uae_u32 low = oaddr & 0xffff;
+		if (low == 0xf01c || low == 0xf09a) {
+			uaecptr pc = M68K_GETPC;
+			const uae_u32 d0 = m68k_dreg(regs, 0);
+			const uae_u32 d1 = m68k_dreg(regs, 1);
+			const uae_u32 a3 = m68k_areg(regs, 3);
+			const uae_u32 a4 = m68k_areg(regs, 4);
+			write_log("JITCUSTOM: wget addr=%08x low=%04x pc=%08x val=%04x d0=%08x d1=%08x a3=%08x a4=%08x\n",
+				(uae_u32)oaddr, low, (uae_u32)pc, (uae_u32)v, d0, d1, a3, a4);
+			if (--custom_log_budget == 0)
+				custom_log_enabled = false;
+		}
+	}
+#endif
 	return v;
 }
 
@@ -7743,6 +7774,35 @@ static int REGPARAM2 custom_wput_1(uaecptr addr, uae_u32 value, int noget)
 			write_drga(addr, NULL, v);
 		}
 	}
+#if defined(LIBRETRO) && defined(JIT)
+	static bool custom_put_log_init_done = false;
+	static bool custom_put_log_enabled = false;
+	static int custom_put_log_budget = 0;
+	if (!custom_put_log_init_done) {
+		custom_put_log_init_done = true;
+		const char* env = getenv("AMIBERRY_JIT_CUSTOM_LOG");
+		if (env && *env && *env != '0') {
+			custom_put_log_enabled = true;
+			custom_put_log_budget = atoi(env);
+			if (custom_put_log_budget <= 0)
+				custom_put_log_budget = 200;
+		}
+	}
+	if (custom_put_log_enabled && custom_put_log_budget > 0) {
+		const uae_u32 low = oaddr & 0xffff;
+		if (low == 0xf01c || low == 0xf09a) {
+			uaecptr pc = M68K_GETPC;
+			const uae_u32 d0 = m68k_dreg(regs, 0);
+			const uae_u32 d1 = m68k_dreg(regs, 1);
+			const uae_u32 a3 = m68k_areg(regs, 3);
+			const uae_u32 a4 = m68k_areg(regs, 4);
+			write_log("JITCUSTOM: wput addr=%08x low=%04x pc=%08x val=%04x d0=%08x d1=%08x a3=%08x a4=%08x\n",
+				(uae_u32)oaddr, low, (uae_u32)pc, (uae_u32)(value & 0xffff), d0, d1, a3, a4);
+			if (--custom_put_log_budget == 0)
+				custom_put_log_enabled = false;
+		}
+	}
+#endif
 	return ret;
 }
 #ifndef WITH_THREADED_CPU

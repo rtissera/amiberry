@@ -57,6 +57,16 @@
 //#define DEBUG 0
 #include "debug.h"
 
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+#define MOV_PTR_RI(d, i) mov_q_ri((d), (jit_val_t)(i))
+#define ADD_PTR_RI(d, i) add_q_ri((d), (jit_val_t)(i))
+#define MOV_PTR_RR(d, s) mov_q_rr((d), (s))
+#else
+#define MOV_PTR_RI(d, i) mov_l_ri((d), (uae_u32)(i))
+#define ADD_PTR_RI(d, i) add_l_ri((d), (uae_u32)(i))
+#define MOV_PTR_RR(d, s) mov_l_rr((d), (s))
+#endif
+
 struct jit_disable_opcodes jit_disable;
 
 #if defined(USE_LONG_DOUBLE) || defined(USE_QUAD_DOUBLE)
@@ -731,8 +741,8 @@ void comp_fbcc_opp(uae_u32 opcode)
 {
 	uae_u32 start_68k_offset = m68k_pc_offset;
 	uae_u32 off;
-	uae_u32 v1;
-	uae_u32 v2;
+	jit_val_t v1;
+	jit_val_t v2;
 	int cc;
 
 	// comp_pc_p is expected to be bound to 32-bit addresses
@@ -755,20 +765,20 @@ void comp_fbcc_opp(uae_u32 opcode)
 	{
 		off = comp_get_ilong((m68k_pc_offset += 4) - 4);
 	}
-	mov_l_ri(S1, JITPTR (comp_pc_p + off - (m68k_pc_offset - start_68k_offset)));
-	mov_l_ri(PC_P, JITPTR comp_pc_p);
+	MOV_PTR_RI(S1, JITPTR (comp_pc_p + off - (m68k_pc_offset - start_68k_offset)));
+	MOV_PTR_RI(PC_P, JITPTR comp_pc_p);
 
 	/* Now they are both constant. Might as well fold in m68k_pc_offset */
-	add_l_ri(S1, m68k_pc_offset);
-	add_l_ri(PC_P, m68k_pc_offset);
+	ADD_PTR_RI(S1, m68k_pc_offset);
+	ADD_PTR_RI(PC_P, m68k_pc_offset);
 	m68k_pc_offset = 0;
 
 	/* according to fpp.c, the 0x10 bit is ignored
 	   (it handles exception handling, which we don't
 	   do, anyway ;-) */
 	cc = opcode & 0x0f;
-	v1 = get_const(PC_P);
-	v2 = get_const(S1);
+	v1 = get_const_ptr(PC_P);
+	v2 = get_const_ptr(S1);
 	fflags_into_flags(S2);
 
 	switch (cc)
@@ -776,7 +786,7 @@ void comp_fbcc_opp(uae_u32 opcode)
 	case 0:
 		break;							/* jump never */
 	case 1:
-		mov_l_rr(S2, PC_P);
+		MOV_PTR_RR(S2, PC_P);
 		cmov_l_rr(PC_P, S1, 4);
 		cmov_l_rr(PC_P, S2, 10);
 		break;
@@ -787,12 +797,12 @@ void comp_fbcc_opp(uae_u32 opcode)
 		register_branch(v1, v2, 3);
 		break;
 	case 4:
-		mov_l_rr(S2, PC_P);
+		MOV_PTR_RR(S2, PC_P);
 		cmov_l_rr(PC_P, S1, 2);
 		cmov_l_rr(PC_P, S2, 10);
 		break;
 	case 5:
-		mov_l_rr(S2, PC_P);
+		MOV_PTR_RR(S2, PC_P);
 		cmov_l_rr(PC_P, S1, 6);
 		cmov_l_rr(PC_P, S2, 10);
 		break;
@@ -827,7 +837,7 @@ void comp_fbcc_opp(uae_u32 opcode)
 		cmov_l_rr(PC_P, S1, 10);
 		break;
 	case 15:
-		mov_l_rr(PC_P, S1);
+		MOV_PTR_RR(PC_P, S1);
 		break;
 	}
 }

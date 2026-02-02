@@ -70,6 +70,9 @@
 #ifdef AVIOUTPUT
 #include "videograb.h"
 #endif
+#if defined(LIBRETRO) && defined(JIT)
+#include <dlfcn.h>
+#endif
 #ifdef AHI
 #include "ahi_v1.h"
 #endif
@@ -124,6 +127,10 @@ static DEVICE_VOID device_leaves_early[MAX_DEVICE_ITEMS];
 static int device_resets_cnt;
 static DEVICE_INT device_resets[MAX_DEVICE_ITEMS];
 static bool device_reset_done[MAX_DEVICE_ITEMS];
+#if defined(LIBRETRO) && defined(JIT)
+static int g_device_reset_active_idx = -1;
+static DEVICE_INT g_device_reset_active_fn = nullptr;
+#endif
 
 static void reset_device_items(void)
 {
@@ -201,11 +208,37 @@ void devices_reset_ext(int hardreset)
 {
 	for (int i = 0; i < device_resets_cnt; i++) {
 		if (!device_reset_done[i]) {
+#if defined(LIBRETRO) && defined(JIT)
+			g_device_reset_active_idx = i;
+			g_device_reset_active_fn = device_resets[i];
+			Dl_info info{};
+			const int ok = dladdr((const void*)device_resets[i], &info);
+			const char* sym = (ok && info.dli_sname) ? info.dli_sname : "<null>";
+			const char* obj = (ok && info.dli_fname) ? info.dli_fname : "<null>";
+			write_log("DEVRESET: idx=%d func=%p sym=%s obj=%s hardreset=%d\n",
+				i, (void*)device_resets[i], sym, obj, hardreset);
+#endif
 			device_resets[i](hardreset);
+#if defined(LIBRETRO) && defined(JIT)
+			g_device_reset_active_idx = -1;
+			g_device_reset_active_fn = nullptr;
+#endif
 			device_reset_done[i] = true;
 		}
 	}
 }
+
+#if defined(LIBRETRO) && defined(JIT)
+int device_reset_active_idx(void)
+{
+	return g_device_reset_active_idx;
+}
+
+void* device_reset_active_fn(void)
+{
+	return (void*)g_device_reset_active_fn;
+}
+#endif
 
 void devices_reset(int hardreset)
 {

@@ -84,6 +84,12 @@ static bool ff_override_supported = false;
 static bool ff_override_active = false;
 static int last_geometry_width = -1;
 static int last_geometry_height = -1;
+static bool jit_capable = false;
+static bool cached_jit_enabled = false;
+#define JIT
+#ifdef JIT
+static constexpr int kLibretroJitCacheKb = 8192;
+#endif
 
 static retro_set_led_state_t led_state_cb = nullptr;
 enum RetroLedIndex {
@@ -497,6 +503,7 @@ static const struct retro_variable variables[] = {
 	{ "amiberry_model", "Amiga Model; A500|A500+|A600|A1200|CD32|A4000|CDTV" },
 	{ "amiberry_kickstart", "Kickstart ROM; auto|kick.rom|kick13.rom|kick20.rom|kick31.rom|kick205.rom|kick40068.A1200|kick40068.A4000|cd32.rom|cdtv.rom" },
 	{ "amiberry_cpu_model", "CPU Model; auto|68000|68010|68020|68030" },
+	{ "amiberry_jit", "JIT; disabled|enabled" },
 	{ "amiberry_chipset", "Chipset; auto|ocs|ecs" },
 	{ "amiberry_chipset_aga", "Chipset (AGA Models); auto|ocs|ecs|aga" },
 	{ "amiberry_audio_rate", "Audio Rate (Hz); auto|44100|48000" },
@@ -580,6 +587,20 @@ static struct retro_core_option_v2_definition option_defs[] = {
 			{ NULL, NULL }
 		},
 		"auto"
+	},
+	{
+		"amiberry_jit",
+		"JIT",
+		"JIT",
+		"Enable JIT (requires 68020+ and frontend permission). Core restart required.",
+		NULL,
+		"system",
+		{
+			{ "disabled", NULL },
+			{ "enabled", NULL },
+			{ NULL, NULL }
+		},
+		"disabled"
 	},
 	{
 		"amiberry_chipset",
@@ -838,6 +859,14 @@ static bool update_core_option_visibility(void)
 	disp.visible = aga_model;
 	environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &disp);
 
+	disp.key = "amiberry_jit";
+#ifdef JIT
+	disp.visible = jit_capable;
+#else
+	disp.visible = false;
+#endif
+	environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &disp);
+
 	return true;
 }
 
@@ -1012,6 +1041,19 @@ static void setup_whdload_paths()
 	}
 }
 
+static void setup_amiberry_env()
+{
+	if (!save_dir.empty()) {
+#ifdef _WIN32
+		_putenv_s("AMIBERRY_HOME_DIR", save_dir.c_str());
+		_putenv_s("AMIBERRY_CONFIG_DIR", save_dir.c_str());
+#else
+		setenv("AMIBERRY_HOME_DIR", save_dir.c_str(), 1);
+		setenv("AMIBERRY_CONFIG_DIR", save_dir.c_str(), 1);
+#endif
+	}
+}
+
 static std::string trim_copy(const char* input)
 {
 	if (!input)
@@ -1051,9 +1093,12 @@ static bool find_kickstart_in_dir(const std::string& dir, const char* name, char
 
 static bool pick_whdload_kickstart(const std::string& dir, char* out, size_t out_size)
 {
-	if (find_kickstart_in_dir(dir, "kick205.rom", out, out_size))
-		return true;
+	// Prefer A1200-class ROMs for WHDLoad if available.
 	if (find_kickstart_in_dir(dir, "kick31.rom", out, out_size))
+		return true;
+	if (find_kickstart_in_dir(dir, "kick40068.A1200", out, out_size))
+		return true;
+	if (find_kickstart_in_dir(dir, "kick205.rom", out, out_size))
 		return true;
 	return false;
 }
@@ -1457,6 +1502,10 @@ static void snapshot_core_options()
 	cached_kickstart_override = kick ? kick : "";
 	const char* cpu_model = get_option_value("amiberry_cpu_model");
 	cached_cpu_model = cpu_model ? cpu_model : "";
+	const char* jit = get_option_value("amiberry_jit");
+	cached_jit_enabled = jit && strcmp(jit, "enabled") == 0;
+	if (!jit_capable)
+		cached_jit_enabled = false;
 	const char* chipset = get_option_value("amiberry_chipset");
 	cached_chipset = chipset ? chipset : "";
 	const char* chipset_aga = get_option_value("amiberry_chipset_aga");
@@ -1476,6 +1525,17 @@ static const char* cached_chipset_value()
 		return nullptr;
 	return value.c_str();
 }
+
+#ifdef JIT
+static bool should_enable_jit_for_model()
+{
+	if (!cached_cpu_model.empty() && cached_cpu_model != "auto") {
+		const int model = atoi(cached_cpu_model.c_str());
+		return model >= 68020;
+	}
+	return is_aga_model_name(cached_model.empty() ? nullptr : cached_model.c_str());
+}
+#endif
 
 static bool resolve_kickstart_override_value(const char* opt, char* out, size_t out_size)
 {
@@ -2013,6 +2073,16 @@ static void core_entry(void)
 		push_s_option(std::string("sound_interpol=") + audio_interpol);
 	}
 
+#ifdef JIT
+	/*if (cached_jit_enabled && jit_capable && should_enable_jit_for_model())*/ {
+		push_s_option("jit_inhibit=0");
+		push_s_option(std::string("cachesize=") + std::to_string(kLibretroJitCacheKb));
+	} /*else {
+		push_s_option("jit_inhibit=1");
+		push_s_option("cachesize=0");
+	}*/
+#endif
+
 	argv.push_back(strdup("-G")); // No GUI
 
 	std::string rom_path_value;
@@ -2034,8 +2104,6 @@ static void core_entry(void)
 		}
 		if (rom_path_value.empty())
 			rom_path_value = system_dir;
-		const std::string rom_path = "rom_path=" + rom_path_value;
-		push_s_option(rom_path);
 	}
 
 	{
@@ -2060,21 +2128,6 @@ static void core_entry(void)
 			libretro_debug_log("kickstart override: %s\n", kick_path);
 		}
 	}
-	if (!save_dir.empty()) {
-		const std::string cfg_path = "config_path=" + save_dir;
-		const std::string saveimage_path = "saveimage_dir=" + save_dir;
-		const std::string savestate_path = "savestate_dir=" + save_dir;
-		const std::string statefile_path = "statefile_path=" + save_dir;
-		argv.push_back(strdup("-s"));
-		argv.push_back(strdup(cfg_path.c_str()));
-		argv.push_back(strdup("-s"));
-		argv.push_back(strdup(saveimage_path.c_str()));
-		argv.push_back(strdup("-s"));
-		argv.push_back(strdup(savestate_path.c_str()));
-		argv.push_back(strdup("-s"));
-		argv.push_back(strdup(statefile_path.c_str()));
-	}
-
 	if (game_path[0])
 	{
 		if (is_whdload) {
@@ -2086,6 +2139,20 @@ static void core_entry(void)
 			argv.push_back(strdup(game_path));
 		}
 	}
+#ifdef JIT
+#if defined(LIBRETRO)
+	// HACK: force-disable cycle-exact flags after --autoload so JIT stays enabled.
+	// WHDLoad database entries can flip these to true and fixup_prefs() will drop cachesize.
+	// This is intentionally unconditional while we validate libretro JIT behavior.
+	push_s_option("cpu_cycle_exact=false");
+	push_s_option("cpu_memory_cycle_exact=false");
+	push_s_option("blitter_cycle_exact=false");
+	push_s_option("cpu_compatible=false");
+	// HACK: re-assert JIT options last so they survive any earlier overrides.
+	push_s_option("jit_inhibit=0");
+	push_s_option(std::string("cachesize=") + std::to_string(kLibretroJitCacheKb));
+#endif
+#endif
 	argv.push_back(nullptr);
 
 	if (libretro_debug_file) {
@@ -2187,6 +2254,15 @@ void retro_set_environment(retro_environment_t cb)
 		if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt) && log_cb) {
 			log_cb(RETRO_LOG_WARN, "Failed to set pixel format XRGB8888; using default.\n");
 		}
+	}
+	{
+		bool cap = false;
+		if (environ_cb(RETRO_ENVIRONMENT_GET_JIT_CAPABLE, &cap))
+			jit_capable = cap;
+		else
+			jit_capable = false;
+		if (log_cb)
+			log_cb(RETRO_LOG_INFO, "libretro JIT capable: %d\n", jit_capable ? 1 : 0);
 	}
 	static struct retro_keyboard_callback kb_cb = { keyboard_cb };
 	environ_cb(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &kb_cb);
@@ -2445,6 +2521,8 @@ bool retro_load_game(const struct retro_game_info *info)
 	const bool is_whdload = (ext == "lha" || ext == "lzh");
 	libretro_debug_log("retro_load_game: path='%s' ext='%s' is_whdload=%d\n",
 		path.c_str(), ext.c_str(), is_whdload ? 1 : 0);
+
+	setup_amiberry_env();
 
 	if (is_whdload) {
 		if (log_cb) {

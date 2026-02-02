@@ -158,7 +158,8 @@ static int fallback_new_cpu_model;
 
 int cpu_last_stop_vpos, cpu_stopped_lines;
 
-void (*flush_icache)(int);
+static void flush_icache_stub(int) {}
+void (*flush_icache)(int) = flush_icache_stub;
 
 #if COUNT_INSTRS
 static unsigned long int instrcount[65536];
@@ -5670,6 +5671,8 @@ static int cpu_thread_run_jit(void *v)
 
 static void m68k_run_jit(void)
 {
+	static int jit_pc_log_interval = -1;
+	static uae_u64 jit_pc_log_counter = 0;
 #ifdef WITH_THREADED_CPU
 	if (currprefs.cpu_thread) {
 		run_cpu_thread(cpu_thread_run_jit);
@@ -5688,7 +5691,103 @@ static void m68k_run_jit(void)
 		__try {
 #endif
 			for (;;) {
+				if (jit_pc_log_interval == -1) {
+					const char *env = getenv("AMIBERRY_JIT_PC_LOG");
+					if (!env) {
+						jit_pc_log_interval = 0;
+					} else {
+						char *end = nullptr;
+						long val = strtol(env, &end, 10);
+						if (val <= 0)
+							val = 100000;
+						jit_pc_log_interval = (int)val;
+					}
+				}
 				((compiled_handler*)(pushall_call_handler))();
+				if (jit_pc_log_interval > 0) {
+					jit_pc_log_counter++;
+					if (jit_pc_log_counter >= (uae_u64)jit_pc_log_interval) {
+						jit_pc_log_counter = 0;
+						write_log("JITPC: pc=%08x pc_p=%p spc=%08x t0=%d t1=%d m=%d d0=%08x d1=%08x d2=%08x d5=%08x a0=%08x a4=%08x\n",
+							m68k_getpc(), regs.pc_p, regs.spcflags, regs.t0, regs.t1, regs.m,
+							m68k_dreg(regs, 0), m68k_dreg(regs, 1), m68k_dreg(regs, 2), m68k_dreg(regs, 5),
+							m68k_areg(regs, 0), m68k_areg(regs, 4));
+						{
+							const uae_u32 pc = m68k_getpc();
+							if (pc == 0x00f8036c || pc == 0x00f80360) {
+								write_log("JITPCX: pc=%08x sr=%04x spc=%08x intmask=%d ipl_pin=%d ipl0=%d ipl1=%d a6=%08x a7=%08x usp=%08x isp=%08x msp=%08x\n",
+									pc, regs.sr, regs.spcflags, regs.intmask, regs.ipl_pin, regs.ipl[0], regs.ipl[1],
+									m68k_areg(regs, 6), m68k_areg(regs, 7), regs.usp, regs.isp, regs.msp);
+							}
+						}
+					}
+				}
+#if defined(LIBRETRO) && defined(JIT)
+				{
+					static int jit_pc_watch_budget = -1;
+					static bool jit_pc_watch_range_init = false;
+					static uae_u32 jit_pc_watch_start = 0x00f80000;
+					static uae_u32 jit_pc_watch_end = 0x00f82000;
+					static bool jit_pc_watch_log_exit = false;
+					static bool jit_pc_watch_exit_logged = false;
+					static bool jit_pc_watch_seen_in_range = false;
+					if (jit_pc_watch_budget == -1) {
+						jit_pc_watch_budget = 0;
+						const char* env = getenv("AMIBERRY_JIT_PC_WATCH");
+						if (env && *env && *env != '0') {
+							jit_pc_watch_budget = atoi(env);
+							if (jit_pc_watch_budget <= 0)
+								jit_pc_watch_budget = 50;
+						}
+					}
+					if (!jit_pc_watch_range_init) {
+						jit_pc_watch_range_init = true;
+						const char* range_env = getenv("AMIBERRY_JIT_PC_WATCH_RANGE");
+						if (range_env && *range_env) {
+							const char* sep = strchr(range_env, ':');
+							if (!sep)
+								sep = strchr(range_env, '-');
+							if (sep && sep > range_env) {
+								char start_buf[32] = {0};
+								char end_buf[32] = {0};
+								const size_t start_len = (size_t)(sep - range_env);
+								if (start_len < sizeof(start_buf)) {
+									memcpy(start_buf, range_env, start_len);
+									start_buf[start_len] = '\0';
+									strncpy(end_buf, sep + 1, sizeof(end_buf) - 1);
+									jit_pc_watch_start = (uae_u32)strtoul(start_buf, nullptr, 16);
+									jit_pc_watch_end = (uae_u32)strtoul(end_buf, nullptr, 16);
+									if (jit_pc_watch_end < jit_pc_watch_start)
+										jit_pc_watch_end = jit_pc_watch_start;
+								}
+							}
+						}
+						const char* exit_env = getenv("AMIBERRY_JIT_PC_WATCH_EXIT");
+						if (exit_env && *exit_env && *exit_env != '0')
+							jit_pc_watch_log_exit = true;
+					}
+					{
+						const uae_u32 pc = m68k_getpc();
+						const bool in_range = (pc >= jit_pc_watch_start && pc < jit_pc_watch_end);
+						if (in_range)
+							jit_pc_watch_seen_in_range = true;
+						if (jit_pc_watch_budget > 0 && in_range) {
+							write_log("JITPCW: pc=%08x sr=%04x spc=%08x intmask=%d d0=%08x d1=%08x d2=%08x a0=%08x\n",
+								pc, regs.sr, regs.spcflags, regs.intmask,
+								m68k_dreg(regs, 0), m68k_dreg(regs, 1), m68k_dreg(regs, 2),
+								m68k_areg(regs, 0));
+							if (--jit_pc_watch_budget == 0)
+								jit_pc_watch_budget = 0;
+						} else if (jit_pc_watch_log_exit && jit_pc_watch_seen_in_range && !jit_pc_watch_exit_logged && !in_range) {
+							jit_pc_watch_exit_logged = true;
+							write_log("JITPCW: left range pc=%08x sr=%04x spc=%08x intmask=%d d0=%08x d1=%08x d2=%08x a0=%08x\n",
+								pc, regs.sr, regs.spcflags, regs.intmask,
+								m68k_dreg(regs, 0), m68k_dreg(regs, 1), m68k_dreg(regs, 2),
+								m68k_areg(regs, 0));
+						}
+					}
+				}
+#endif
 				/* Whenever we return from that, we should check spcflags */
 				check_uae_int_request();
 				if (regs.spcflags) {

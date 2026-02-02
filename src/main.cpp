@@ -419,6 +419,14 @@ void fixup_cpu (struct uae_prefs *p)
 
 void fixup_prefs (struct uae_prefs *p, bool userconfig)
 {
+#if defined(LIBRETRO)
+	write_log(
+		_T("LIBRETRO fixup_prefs (pre): cachesize=%d inhibit=%d cpu=%d ce=%d mce=%d blit_ce=%d compat=%d addr24=%d\n"),
+		p->cachesize, p->cachesize_inhibit ? 1 : 0, p->cpu_model,
+		p->cpu_cycle_exact ? 1 : 0, p->cpu_memory_cycle_exact ? 1 : 0,
+		p->blitter_cycle_exact ? 1 : 0, p->cpu_compatible ? 1 : 0,
+		p->address_space_24 ? 1 : 0);
+#endif
 	built_in_chipset_prefs (p);
 	fixup_cpu (p);
 	cfgfile_compatibility_rtg(p);
@@ -782,6 +790,14 @@ void fixup_prefs (struct uae_prefs *p, bool userconfig)
 #ifndef AMIBERRY
 	// This one caused crashes in some cases, and I don't think it's actually needed in Amiberry
 	cfgfile_createconfigstore(p);
+#endif
+#if defined(LIBRETRO)
+	write_log(
+		_T("LIBRETRO fixup_prefs (post): cachesize=%d inhibit=%d cpu=%d ce=%d mce=%d blit_ce=%d compat=%d addr24=%d\n"),
+		p->cachesize, p->cachesize_inhibit ? 1 : 0, p->cpu_model,
+		p->cpu_cycle_exact ? 1 : 0, p->cpu_memory_cycle_exact ? 1 : 0,
+		p->blitter_cycle_exact ? 1 : 0, p->cpu_compatible ? 1 : 0,
+		p->address_space_24 ? 1 : 0);
 #endif
 }
 
@@ -1462,7 +1478,9 @@ static int real_main2 (int argc, TCHAR **argv)
 	gui_data.md = (currprefs.cs_cd32nvram || currprefs.cs_cdtvram) ? 0 : -1;
 
 #ifdef JIT
+#ifndef LIBRETRO
 	compiler_init();
+#endif
 #endif
 #ifdef NATMEM_OFFSET
 	if (!init_shm ()) {
@@ -1470,6 +1488,12 @@ static int real_main2 (int argc, TCHAR **argv)
 			uae_restart(&currprefs, -1, nullptr);
 		return 0;
 	}
+#endif
+#ifdef JIT
+#if defined(LIBRETRO) && !defined(CPU_x86_64)
+	// libretro needs NATMEM_OFFSET set before JIT emits code
+	compiler_init();
+#endif
 #endif
 #ifdef WITH_LUA
 	uae_lua_init ();

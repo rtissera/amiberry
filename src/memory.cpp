@@ -31,6 +31,9 @@
 #ifdef ARCADIA
 #include "arcadia.h"
 #endif
+#if defined(LIBRETRO) && defined(JIT)
+#include <dlfcn.h>
+#endif
 #ifdef ENFORCER
 #include "enforcer.h"
 #endif
@@ -38,12 +41,20 @@
 #include "debug.h"
 #include "debugmem.h"
 #include "cpuboard.h"
+#if defined(LIBRETRO) && defined(CPU_x86_64) && defined(JIT)
+#include "uae/vm.h"
+#endif
 #ifdef WITH_PPC
 #include "uae/ppc.h"
 #endif
 #include "devices.h"
 #ifdef WITH_DRACO
 #include "draco.h"
+#endif
+
+#ifdef JIT
+extern void compiler_init(void);
+extern bool check_prefs_changed_comp(bool checkonly);
 #endif
 
 bool canbang;
@@ -114,6 +125,167 @@ same value as mem_banks, for those banks that have baseaddr==0. In that
 case, bit 0 is set (the memory access routines will take care of it).  */
 
 uae_u8 *baseaddr[MEMORY_BANKS];
+#if defined(LIBRETRO) && defined(CPU_x86_64) && defined(JIT)
+addrbank **jit_mem_banks = nullptr;
+uae_u8 **jit_baseaddr = nullptr;
+static bool jit_ptr_log_env_init_done = false;
+static bool jit_ptr_log_enabled = false;
+static bool jit_ptr_log_all = false;
+
+static void jit_ptr_log_env_init(void)
+{
+	if (jit_ptr_log_env_init_done)
+		return;
+	jit_ptr_log_env_init_done = true;
+	const char* env = getenv("AMIBERRY_JIT_PTR_LOG");
+	if (env && *env && *env != '0') {
+		jit_ptr_log_enabled = true;
+		if (strcmp(env, "2") == 0 || strcmp(env, "all") == 0)
+			jit_ptr_log_all = true;
+	}
+}
+
+static void jit_ptr_log_dump_tables(const char* tag)
+{
+	jit_ptr_log_env_init();
+	if (!jit_ptr_log_enabled)
+		return;
+	write_log("JITPTR: %s jit_baseaddr=%p jit_mem_banks=%p\n",
+		tag, (void*)jit_baseaddr, (void*)jit_mem_banks);
+	auto bank_name = [](int idx) -> const TCHAR* {
+		addrbank* bank = nullptr;
+		if (jit_mem_banks && idx >= 0 && idx < MEMORY_BANKS)
+			bank = jit_mem_banks[idx];
+		if (!bank && idx >= 0 && idx < MEMORY_BANKS)
+			bank = mem_banks[idx];
+		if (!bank)
+			return nullptr;
+		return bank->name ? bank->name : bank->label;
+	};
+	const int idxs[] = {0x00, 0x02, 0xA0, 0xA8, 0xC0, 0xC3, 0xE0, 0xF0, 0xF8};
+	const size_t count = sizeof(idxs) / sizeof(idxs[0]);
+	for (size_t i = 0; i < count; ++i) {
+		const int idx = idxs[i];
+		if (idx < MEMORY_BANKS)
+			write_log("JITPTR: %s baseaddr[%02X]=%p mem_banks[%02X]=%p name=%s\n",
+				tag,
+				idx, jit_baseaddr ? (void*)jit_baseaddr[idx] : nullptr,
+				idx, jit_mem_banks ? (void*)jit_mem_banks[idx] : nullptr,
+				bank_name(idx) ? bank_name(idx) : "<null>");
+	}
+	if (jit_ptr_log_all) {
+		for (int i = 0; i < MEMORY_BANKS; ++i) {
+			if (jit_baseaddr && jit_mem_banks && (jit_baseaddr[i] || jit_mem_banks[i])) {
+				write_log("JITPTR: %s baseaddr[%02X]=%p mem_banks[%02X]=%p name=%s\n",
+					tag, i, (void*)jit_baseaddr[i], i, (void*)jit_mem_banks[i],
+					bank_name(i) ? bank_name(i) : "<null>");
+			}
+		}
+	}
+}
+
+static void jit_ptr_log_dump_keys(const char* tag)
+{
+	jit_ptr_log_env_init();
+	if (!jit_ptr_log_enabled)
+		return;
+	write_log("JITPTR: %s jit_baseaddr=%p jit_mem_banks=%p\n",
+		tag, (void*)jit_baseaddr, (void*)jit_mem_banks);
+	auto bank_name = [](int idx) -> const TCHAR* {
+		addrbank* bank = nullptr;
+		if (jit_mem_banks && idx >= 0 && idx < MEMORY_BANKS)
+			bank = jit_mem_banks[idx];
+		if (!bank && idx >= 0 && idx < MEMORY_BANKS)
+			bank = mem_banks[idx];
+		if (!bank)
+			return nullptr;
+		return bank->name ? bank->name : bank->label;
+	};
+	const int idxs[] = {0x00, 0x02, 0x08, 0x10, 0xA0, 0xA8, 0xB0, 0xC0, 0xC3, 0xD8, 0xE0, 0xF0, 0xF8};
+	const size_t count = sizeof(idxs) / sizeof(idxs[0]);
+	for (size_t i = 0; i < count; ++i) {
+		const int idx = idxs[i];
+		if (idx < MEMORY_BANKS)
+			write_log("JITPTR: %s baseaddr[%02X]=%p mem_banks[%02X]=%p name=%s\n",
+				tag,
+				idx, jit_baseaddr ? (void*)jit_baseaddr[idx] : nullptr,
+				idx, jit_mem_banks ? (void*)jit_mem_banks[idx] : nullptr,
+				bank_name(idx) ? bank_name(idx) : "<null>");
+	}
+}
+
+static void jit_ptr_log_bank(const char* tag, int idx)
+{
+	jit_ptr_log_env_init();
+	if (!jit_ptr_log_enabled)
+		return;
+	addrbank* bank = nullptr;
+	if (jit_mem_banks && idx >= 0 && idx < MEMORY_BANKS)
+		bank = jit_mem_banks[idx];
+	if (!bank && idx >= 0 && idx < MEMORY_BANKS)
+		bank = mem_banks[idx];
+	const TCHAR* name = bank ? (bank->name ? bank->name : bank->label) : nullptr;
+	write_log("JITPTR: %s bank[%02X]=%p name=%s baseaddr=%p\n",
+		tag, idx, (void*)bank, name ? name : "<null>",
+		(void*)(jit_baseaddr ? jit_baseaddr[idx] : baseaddr[idx]));
+}
+
+static void jit_init_mem_tables(void)
+{
+	if (jit_mem_banks && jit_baseaddr)
+		return;
+	const uae_u32 mb_bytes = (uae_u32)(sizeof(addrbank*) * MEMORY_BANKS);
+	const uae_u32 ba_bytes = (uae_u32)(sizeof(uae_u8*) * MEMORY_BANKS);
+	void *mb = uae_vm_alloc(mb_bytes, UAE_VM_32BIT, UAE_VM_READ_WRITE);
+	if (mb == UAE_VM_ALLOC_FAILED)
+		mb = uae_vm_alloc(mb_bytes, 0, UAE_VM_READ_WRITE);
+	void *ba = uae_vm_alloc(ba_bytes, UAE_VM_32BIT, UAE_VM_READ_WRITE);
+	if (ba == UAE_VM_ALLOC_FAILED)
+		ba = uae_vm_alloc(ba_bytes, 0, UAE_VM_READ_WRITE);
+	if (mb == UAE_VM_ALLOC_FAILED || ba == UAE_VM_ALLOC_FAILED) {
+		jit_mem_banks = nullptr;
+		jit_baseaddr = nullptr;
+		return;
+	}
+	jit_mem_banks = (addrbank**)mb;
+	jit_baseaddr = (uae_u8**)ba;
+	memset(jit_mem_banks, 0, mb_bytes);
+	memset(jit_baseaddr, 0, ba_bytes);
+	jit_ptr_log_env_init();
+	if (jit_ptr_log_enabled) {
+		write_log("JITPTR: allocated jit tables baseaddr=%p mem_banks=%p\n",
+			(void*)jit_baseaddr, (void*)jit_mem_banks);
+	}
+}
+
+void jit_ensure_mem_tables(void)
+{
+	jit_init_mem_tables();
+}
+
+static void jit_disable_direct_if_nondirect_banks(void)
+{
+	/* JIT direct (canbang) is unsafe if any bank lacks a direct baseaddr. */
+	if (!canbang)
+		return;
+	jit_ptr_log_env_init();
+	for (int i = 0; i < MEMORY_BANKS; ++i) {
+		uae_u8 *ba = baseaddr[i];
+		if (ba && ((uintptr_t)ba & 1)) {
+			if (jit_ptr_log_enabled) {
+				addrbank* bank = mem_banks[i];
+				const TCHAR* name = bank ? (bank->name ? bank->name : bank->label) : nullptr;
+				write_log("LIBRETRO: non-direct bank %02X baseaddr=%p bank=%p name=%s\n",
+					i, (void*)ba, (void*)bank, name ? name : "<null>");
+			}
+			canbang = 0;
+			jit_n_addr_unsafe = 1;
+			write_log("LIBRETRO: JIT direct disabled (non-direct bank at %02X)\n", i);
+			break;
+		}
+	}
+}
+#endif
 
 #ifdef NO_INLINE_MEMORY_ACCESS
 __inline__ uae_u32 longget (uaecptr addr)
@@ -337,8 +509,15 @@ uae_u32 dummy_get_safe(uaecptr addr, int size, bool inst, uae_u32 defvalue)
 	uae_u32 mask = size == sz_long ? 0xffffffff : (1 << ((1 << size) * 8)) - 1;
 	if (currprefs.cpu_model >= 68040)
 		return v & mask;
-	if (!currprefs.cpu_compatible)
+	if (!currprefs.cpu_compatible) {
+#if defined(LIBRETRO) && defined(JIT)
+		// Allow open-bus behavior for AGA+68020 even if cpu_compatible is off.
+		if (!(currprefs.cpu_model == 68020 && (currprefs.chipset_mask & CSMASK_AGA)))
+			return v & mask;
+#else
 		return v & mask;
+#endif
+	}
 	if (currprefs.address_space_24)
 		addr &= 0x00ffffff;
 	if (addr >= 0x10000000)
@@ -348,12 +527,31 @@ uae_u32 dummy_get_safe(uaecptr addr, int size, bool inst, uae_u32 defvalue)
 		return 0;
 	if (currprefs.cs_unmapped_space == 2)
 		return 0xffffffff & mask;
-	if ((currprefs.cpu_model <= 68010) || (currprefs.cpu_model == 68020 && (currprefs.chipset_mask & CSMASK_AGA) && currprefs.address_space_24)) {
+	if ((currprefs.cpu_model <= 68010)
+#if defined(LIBRETRO) && defined(JIT)
+		|| (currprefs.cpu_model == 68020 && (currprefs.chipset_mask & CSMASK_AGA) && (currprefs.address_space_24 || currprefs.cachesize > 0))
+#else
+		|| (currprefs.cpu_model == 68020 && (currprefs.chipset_mask & CSMASK_AGA) && currprefs.address_space_24)
+#endif
+	) {
 		// if executed from ROM: always return zero
 		uaecptr pc = m68k_getpc();
 		addrbank *ab = &get_mem_bank(pc);
 		if (ab->flags & ABFLAG_ROM) {
+#if defined(LIBRETRO) && defined(JIT)
+			// Open-bus behavior for CIA/Gayle range during Kickstart ROM checks.
+			if (currprefs.cpu_model == 68020 && (currprefs.chipset_mask & CSMASK_AGA) &&
+			    ((addr & 0x00f00000) == 0x00a00000 || (addr & 0x00f00000) == 0x00b00000)) {
+				if (size == sz_long)
+					return 0xffffffff;
+				if (size == sz_word)
+					return 0xffff;
+				return 0xff;
+			}
+			// For JIT, fall through to open-bus logic (regs.irc) instead of hard-zero.
+#else
 			return 0;
+#endif
 		}
 		if (size == sz_long) {
 			v = regs.irc & 0xffff;
@@ -423,9 +621,34 @@ uae_u32 dummy_get (uaecptr addr, int size, bool inst, uae_u32 defvalue)
 
 static uae_u32 REGPARAM2 dummy_lget (uaecptr addr)
 {
+	uae_u32 v = dummy_get(addr, sz_long, false, nonexistingdata());
+#if defined(LIBRETRO) && defined(JIT)
+	static bool dummy_log_init_done = false;
+	static bool dummy_log_enabled = false;
+	static int dummy_log_budget = 0;
+	if (!dummy_log_init_done) {
+		dummy_log_init_done = true;
+		const char* env = getenv("AMIBERRY_JIT_DUMMY_LOG");
+		if (env && *env && *env != '0') {
+			dummy_log_enabled = true;
+			dummy_log_budget = atoi(env);
+			if (dummy_log_budget <= 0)
+				dummy_log_budget = 200;
+		}
+	}
+	if (dummy_log_enabled && dummy_log_budget > 0) {
+		uaecptr pc = M68K_GETPC;
+		const uae_u32 bank = (addr >> 16) & 0xff;
+		const addrbank* bankptr = mem_banks[bank];
+		const char* bname = (bankptr && bankptr->name) ? bankptr->name : "<null>";
+		write_log("JITDUMMY: lget addr=%08x bank=%02x name=%s pc=%08x val=%08x\n", addr, bank, bname, pc, v);
+		if (--dummy_log_budget == 0)
+			dummy_log_enabled = false;
+	}
+#endif
 	if (currprefs.illegal_mem)
 		dummylog(0, addr, sz_long, 0, 0);
-	return dummy_get(addr, sz_long, false, nonexistingdata());
+	return v;
 }
 uae_u32 REGPARAM2 dummy_lgeti (uaecptr addr)
 {
@@ -436,9 +659,34 @@ uae_u32 REGPARAM2 dummy_lgeti (uaecptr addr)
 
 static uae_u32 REGPARAM2 dummy_wget (uaecptr addr)
 {
+	uae_u32 v = dummy_get(addr, sz_word, false, nonexistingdata());
+#if defined(LIBRETRO) && defined(JIT)
+	static bool dummy_log_init_done = false;
+	static bool dummy_log_enabled = false;
+	static int dummy_log_budget = 0;
+	if (!dummy_log_init_done) {
+		dummy_log_init_done = true;
+		const char* env = getenv("AMIBERRY_JIT_DUMMY_LOG");
+		if (env && *env && *env != '0') {
+			dummy_log_enabled = true;
+			dummy_log_budget = atoi(env);
+			if (dummy_log_budget <= 0)
+				dummy_log_budget = 200;
+		}
+	}
+	if (dummy_log_enabled && dummy_log_budget > 0) {
+		uaecptr pc = M68K_GETPC;
+		const uae_u32 bank = (addr >> 16) & 0xff;
+		const addrbank* bankptr = mem_banks[bank];
+		const char* bname = (bankptr && bankptr->name) ? bankptr->name : "<null>";
+		write_log("JITDUMMY: wget addr=%08x bank=%02x name=%s pc=%08x val=%04x\n", addr, bank, bname, pc, v & 0xffff);
+		if (--dummy_log_budget == 0)
+			dummy_log_enabled = false;
+	}
+#endif
 	if (currprefs.illegal_mem)
 		dummylog(0, addr, sz_word, 0, 0);
-	return dummy_get(addr, sz_word, false, nonexistingdata());
+	return v;
 }
 uae_u32 REGPARAM2 dummy_wgeti (uaecptr addr)
 {
@@ -449,25 +697,122 @@ uae_u32 REGPARAM2 dummy_wgeti (uaecptr addr)
 
 static uae_u32 REGPARAM2 dummy_bget (uaecptr addr)
 {
+	uae_u32 v = dummy_get(addr, sz_byte, false, nonexistingdata());
+#if defined(LIBRETRO) && defined(JIT)
+	static bool dummy_log_init_done = false;
+	static bool dummy_log_enabled = false;
+	static int dummy_log_budget = 0;
+	if (!dummy_log_init_done) {
+		dummy_log_init_done = true;
+		const char* env = getenv("AMIBERRY_JIT_DUMMY_LOG");
+		if (env && *env && *env != '0') {
+			dummy_log_enabled = true;
+			dummy_log_budget = atoi(env);
+			if (dummy_log_budget <= 0)
+				dummy_log_budget = 200;
+		}
+	}
+	if (dummy_log_enabled && dummy_log_budget > 0) {
+		uaecptr pc = M68K_GETPC;
+		const uae_u32 bank = (addr >> 16) & 0xff;
+		const addrbank* bankptr = mem_banks[bank];
+		const char* bname = (bankptr && bankptr->name) ? bankptr->name : "<null>";
+		write_log("JITDUMMY: bget addr=%08x bank=%02x name=%s pc=%08x val=%02x\n", addr, bank, bname, pc, v & 0xff);
+		if (--dummy_log_budget == 0)
+			dummy_log_enabled = false;
+	}
+#endif
 	if (currprefs.illegal_mem)
 		dummylog(0, addr, sz_byte, 0, 0);
-	return dummy_get(addr, sz_byte, false, nonexistingdata());
+	return v;
 }
 
 static void REGPARAM2 dummy_lput (uaecptr addr, uae_u32 l)
 {
+#if defined(LIBRETRO) && defined(JIT)
+	static bool dummy_log_init_done = false;
+	static bool dummy_log_enabled = false;
+	static int dummy_log_budget = 0;
+	if (!dummy_log_init_done) {
+		dummy_log_init_done = true;
+		const char* env = getenv("AMIBERRY_JIT_DUMMY_LOG");
+		if (env && *env && *env != '0') {
+			dummy_log_enabled = true;
+			dummy_log_budget = atoi(env);
+			if (dummy_log_budget <= 0)
+				dummy_log_budget = 200;
+		}
+	}
+	if (dummy_log_enabled && dummy_log_budget > 0) {
+		uaecptr pc = M68K_GETPC;
+		const uae_u32 bank = (addr >> 16) & 0xff;
+		const addrbank* bankptr = mem_banks[bank];
+		const char* bname = (bankptr && bankptr->name) ? bankptr->name : "<null>";
+		write_log("JITDUMMY: lput addr=%08x bank=%02x name=%s pc=%08x val=%08x\n", addr, bank, bname, pc, l);
+		if (--dummy_log_budget == 0)
+			dummy_log_enabled = false;
+	}
+#endif
 	if (currprefs.illegal_mem)
 		dummylog(1, addr, sz_long, l, 0);
 	dummy_put(addr, sz_long, l);
 }
 static void REGPARAM2 dummy_wput (uaecptr addr, uae_u32 w)
 {
+#if defined(LIBRETRO) && defined(JIT)
+	static bool dummy_log_init_done = false;
+	static bool dummy_log_enabled = false;
+	static int dummy_log_budget = 0;
+	if (!dummy_log_init_done) {
+		dummy_log_init_done = true;
+		const char* env = getenv("AMIBERRY_JIT_DUMMY_LOG");
+		if (env && *env && *env != '0') {
+			dummy_log_enabled = true;
+			dummy_log_budget = atoi(env);
+			if (dummy_log_budget <= 0)
+				dummy_log_budget = 200;
+		}
+	}
+	if (dummy_log_enabled && dummy_log_budget > 0) {
+		uaecptr pc = M68K_GETPC;
+		const uae_u32 bank = (addr >> 16) & 0xff;
+		const addrbank* bankptr = mem_banks[bank];
+		const char* bname = (bankptr && bankptr->name) ? bankptr->name : "<null>";
+		write_log("JITDUMMY: wput addr=%08x bank=%02x name=%s pc=%08x val=%04x\n", addr, bank, bname, pc, (uae_u32)(w & 0xffff));
+		if (--dummy_log_budget == 0)
+			dummy_log_enabled = false;
+	}
+#endif
 	if (currprefs.illegal_mem)
 		dummylog(1, addr, sz_word, w, 0);
 	dummy_put(addr, sz_word, w);
 }
 static void REGPARAM2 dummy_bput (uaecptr addr, uae_u32 b)
 {
+#if defined(LIBRETRO) && defined(JIT)
+	static bool dummy_log_init_done = false;
+	static bool dummy_log_enabled = false;
+	static int dummy_log_budget = 0;
+	if (!dummy_log_init_done) {
+		dummy_log_init_done = true;
+		const char* env = getenv("AMIBERRY_JIT_DUMMY_LOG");
+		if (env && *env && *env != '0') {
+			dummy_log_enabled = true;
+			dummy_log_budget = atoi(env);
+			if (dummy_log_budget <= 0)
+				dummy_log_budget = 200;
+		}
+	}
+	if (dummy_log_enabled && dummy_log_budget > 0) {
+		uaecptr pc = M68K_GETPC;
+		const uae_u32 bank = (addr >> 16) & 0xff;
+		const addrbank* bankptr = mem_banks[bank];
+		const char* bname = (bankptr && bankptr->name) ? bankptr->name : "<null>";
+		write_log("JITDUMMY: bput addr=%08x bank=%02x name=%s pc=%08x val=%02x\n", addr, bank, bname, pc, (uae_u32)(b & 0xff));
+		if (--dummy_log_budget == 0)
+			dummy_log_enabled = false;
+	}
+#endif
 	if (currprefs.illegal_mem)
 		dummylog(1, addr, sz_byte, b, 0);
 	dummy_put(addr, sz_byte, b);
@@ -3192,6 +3537,9 @@ void memory_reset (void)
 
 	map_banks (&custom_bank, 0xC0, 0xE0 - 0xC0, 0);
 	map_banks (&cia_bank, 0xA0, 32, 0);
+#if defined(LIBRETRO) && defined(JIT)
+	jit_ptr_log_bank("memory_reset after cia map", 0xA0);
+#endif
 	if (!currprefs.cs_a1000ram && currprefs.cs_rtc != 3)
 		/* D80000 - DDFFFF not mapped (A1000 or A2000 = custom chips) */
 		map_banks (&dummy_bank, 0xD8, 6, 0);
@@ -3202,18 +3550,33 @@ void memory_reset (void)
 		bnk = 0x20 + (currprefs.fastmem[0].size >> 16);
 	bnk_end = currprefs.cs_cd32cd ? 0xBE : (gayleorfatgary ? 0xBF : 0xA0);
 	map_banks (&dummy_bank, bnk, bnk_end - bnk, 0);
+#if defined(LIBRETRO) && defined(JIT)
+	jit_ptr_log_bank("memory_reset after low dummy map", 0xA0);
+#endif
 	if (gayleorfatgary) {
 		 // a3000 or a4000 = custom chips from 0xc0 to 0xd0
 		if (currprefs.cs_ide == IDE_A4000 || currprefs.cs_mbdmac)
 			map_banks (&dummy_bank, 0xd0, 8, 0);
-		else
-			map_banks (&dummy_bank, 0xc0, 0xd8 - 0xc0, 0);
+		else {
+#if defined(LIBRETRO) && defined(JIT)
+			// Keep custom register mirrors visible for Kickstart boot test under libretro JIT.
+			if (!(currprefs.chipset_mask & CSMASK_AGA))
+				map_banks(&dummy_bank, 0xc0, 0xd8 - 0xc0, 0);
+#else
+			map_banks(&dummy_bank, 0xc0, 0xd8 - 0xc0, 0);
+#endif
+		}
 	} else if (currprefs.cs_cd32cd) {
 		// CD32: 0xc0 to 0xd0
 		map_banks(&dummy_bank, 0xd0, 8, 0);
 		// strange 64k custom mirror
 		map_banks(&custom_bank, 0xb9, 1, 0);
 	}
+#if defined(LIBRETRO) && defined(JIT)
+	// Ensure CIA bank is not masked by dummy mapping under libretro JIT.
+	map_banks(&cia_bank, 0xA0, 32, 0);
+	jit_ptr_log_bank("memory_reset after cia remap", 0xA0);
+#endif
 
 	if (bogomem_bank.baseaddr) {
 		int t = currprefs.bogomem.size >> 16;
@@ -3411,11 +3774,22 @@ void memory_reset (void)
 	if (mem_hardreset) {
 		memory_clear ();
 	}
+#if defined(LIBRETRO) && defined(CPU_x86_64) && defined(JIT)
+	jit_disable_direct_if_nondirect_banks();
+	// If canbang flipped, ensure JIT prefs are forced to indirect before codegen.
+	check_prefs_changed_comp(false);
+	// Ensure JIT tables are built with final canbang value after memory mapping.
+	compiler_init();
+	jit_ptr_log_dump_keys("memory_reset end");
+#endif
 	write_log (_T("memory init end\n"));
 }
 
 void memory_init (void)
 {
+#if defined(LIBRETRO) && defined(CPU_x86_64) && defined(JIT)
+	jit_init_mem_tables();
+#endif
 	init_mem_banks ();
 	virtualdevice_init ();
 
@@ -3451,6 +3825,10 @@ void memory_init (void)
 #ifdef ACTION_REPLAY_HRTMON
 	hrtmon_load ();
 #endif
+#endif
+
+#if defined(LIBRETRO) && defined(CPU_x86_64) && defined(JIT)
+	jit_ptr_log_dump_keys("memory_init end");
 #endif
 }
 
@@ -3774,6 +4152,44 @@ void map_banks (addrbank *bank, int start, int size, int realsize)
 	}
 #endif
 
+#if defined(LIBRETRO) && defined(JIT)
+	jit_ptr_log_env_init();
+	if (jit_ptr_log_enabled) {
+		const int watch_idx = 0xA0;
+		if (start <= watch_idx && (start + size) > watch_idx) {
+			const TCHAR* bname = bank ? (bank->name ? bank->name : bank->label) : nullptr;
+			void* ra0 = __builtin_return_address(0);
+			void* ra1 = __builtin_return_address(1);
+			const char* sym = nullptr;
+			const char* obj = nullptr;
+			void* fbase = nullptr;
+			unsigned long long off = 0;
+			int reset_idx = -1;
+			void* reset_fn = nullptr;
+			const char* reset_sym = nullptr;
+			const char* reset_obj = nullptr;
+			Dl_info info;
+			if (ra0 && dladdr(ra0, &info)) {
+				sym = info.dli_sname;
+				obj = info.dli_fname;
+				fbase = info.dli_fbase;
+				if (fbase)
+					off = (unsigned long long)((uintptr_t)ra0 - (uintptr_t)fbase);
+			}
+			reset_idx = device_reset_active_idx();
+			reset_fn = device_reset_active_fn();
+			if (reset_fn && dladdr(reset_fn, &info)) {
+				reset_sym = info.dli_sname;
+				reset_obj = info.dli_fname;
+			}
+			write_log("JITPTR: map_banks bank=%s start=%02X size=%02X hit=%02X ra0=%p ra1=%p sym=%s obj=%s fbase=%p off=0x%llx reset_idx=%d reset_fn=%p reset_sym=%s reset_obj=%s\n",
+				bname ? bname : "<null>", start, size, watch_idx,
+				ra0, ra1, sym ? sym : "<null>", obj ? obj : "<null>", fbase, off,
+				reset_idx, reset_fn, reset_sym ? reset_sym : "<null>", reset_obj ? reset_obj : "<null>");
+		}
+	}
+#endif
+
 	if (start >= MEMORY_BANKS_24) {
 		int real_left = 0;
 		for (int bnr = start; bnr < start + size; bnr++) {
@@ -3783,6 +4199,14 @@ void map_banks (addrbank *bank, int start, int size, int realsize)
 			return;
 	}
 	map_banks2 (bank, start, size, realsize, 0);
+#if defined(LIBRETRO) && defined(JIT)
+	if (jit_ptr_log_enabled) {
+		const int watch_idx = 0xA0;
+		if (start <= watch_idx && (start + size) > watch_idx) {
+			jit_ptr_log_bank("map_banks post", watch_idx);
+		}
+	}
+#endif
 #ifdef WITH_PPC
 	ppc_generate_map_banks(bank, start, size);
 #endif

@@ -498,12 +498,30 @@ extern addrbank *mem_banks[MEMORY_BANKS];
 
 #ifdef JIT
 extern uae_u8 *baseaddr[MEMORY_BANKS];
+#if defined(LIBRETRO) && defined(CPU_x86_64)
+extern addrbank **jit_mem_banks;
+extern uae_u8 **jit_baseaddr;
+void jit_ensure_mem_tables(void);
+#endif
 #endif
 
 #define get_mem_bank(addr) (*mem_banks[bankindex(addr)])
 extern addrbank *get_mem_bank_real(uaecptr);
 
 #ifdef JIT
+#if defined(LIBRETRO) && defined(CPU_x86_64)
+#define put_mem_bank(addr, b, realstart) do { \
+	(mem_banks[bankindex(addr)] = (b)); \
+	if ((b)->baseaddr) \
+		baseaddr[bankindex(addr)] = (b)->baseaddr - (realstart); \
+	else \
+		baseaddr[bankindex(addr)] = (uae_u8*)(((uae_u8*)b)+1); \
+	if (jit_mem_banks && jit_baseaddr) { \
+		jit_mem_banks[bankindex(addr)] = (b); \
+		jit_baseaddr[bankindex(addr)] = baseaddr[bankindex(addr)]; \
+	} \
+} while (0)
+#else
 #define put_mem_bank(addr, b, realstart) do { \
 	(mem_banks[bankindex(addr)] = (b)); \
 	if ((b)->baseaddr) \
@@ -511,6 +529,7 @@ extern addrbank *get_mem_bank_real(uaecptr);
 	else \
 		baseaddr[bankindex(addr)] = (uae_u8*)(((uae_u8*)b)+1); \
 } while (0)
+#endif
 #else
 #define put_mem_bank(addr, b, realstart) \
 	(mem_banks[bankindex(addr)] = (b));

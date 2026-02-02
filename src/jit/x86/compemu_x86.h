@@ -46,7 +46,11 @@ typedef uae_u32 uintptr;
 #define USE_JIT
 #endif
 
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+#define JITPTR (uintptr)
+#else
 #define JITPTR (uae_u32)(uintptr)
+#endif
 
 #ifdef USE_JIT
 
@@ -251,9 +255,15 @@ extern void* pushall_call_handler;
 #define UNDEF 4
 #define ISCONST 5
 
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+typedef uintptr jit_val_t;
+#else
+typedef uae_u32 jit_val_t;
+#endif
+
 typedef struct {
   uae_u32* mem;
-  uae_u32 val;
+  jit_val_t val;
   uae_u8 is_swapped;
   uae_u8 status;
   uae_s8 realreg; /* gb-- realreg can hold -1 */
@@ -347,7 +357,12 @@ typedef struct {
 
 extern int touchcnt;
 
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+/* Keep signed immediates (e.g. PC-relative offsets) while staying pointer-sized. */
+#define IMM  intptr
+#else
 #define IMM  uae_s32
+#endif
 #define RR1  uae_u32
 #define RR2  uae_u32
 #define RR4  uae_u32
@@ -363,9 +378,15 @@ extern int touchcnt;
 #define RW1 uae_u32
 #define RW2 uae_u32
 #define RW4 uae_u32
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+#define MEMR uintptr
+#define MEMW uintptr
+#define MEMRW    uintptr
+#else
 #define MEMR uae_u32
 #define MEMW uae_u32
 #define MEMRW    uae_u32
+#endif
 #define MEMPTR   uintptr
 #define MEMPTRR  MEMPTR
 #define MEMPTRW  MEMPTR
@@ -410,9 +431,18 @@ extern void set_zero(int r, int tmp);
 extern int kill_rodent(int r);
 #define SYNC_PC_OFFSET 100
 extern void sync_m68k_pc(void);
-extern uae_u32 get_const(int r);
+extern jit_val_t get_const(int r);
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+extern uintptr get_const_ptr(int r);
+#else
+extern uae_u32 get_const_ptr(int r);
+#endif
 extern int  is_const(int r);
+#if defined(CPU_x86_64) && defined(LIBRETRO)
+extern void register_branch(jit_val_t not_taken, jit_val_t taken, uae_u8 cond);
+#else
 extern void register_branch(uae_u32 not_taken, uae_u32 taken, uae_u8 cond);
+#endif
 void compemu_make_sr(int sr, int tmp);
 void compemu_enter_super(int sr);
 void compemu_exc_make_frame(int format, int sr, int currpc, int nr, int tmp);
@@ -561,6 +591,9 @@ void jit_abort(const char *format,...) __attribute__((format(printf, 1, 2))) __a
 #endif /* UAE */
 
 #ifdef CPU_64_BIT
+#if defined(LIBRETRO) && defined(CPU_x86_64)
+#define uae_p32(x) ((uintptr)(x))
+#else
 static inline uae_u32 check_uae_p32(uintptr address, const char *file, int line)
 {
 	if (address > (uintptr_t) 0xffffffff) {
@@ -570,6 +603,7 @@ static inline uae_u32 check_uae_p32(uintptr address, const char *file, int line)
 	return (uae_u32) address;
 }
 #define uae_p32(x) (check_uae_p32((uintptr)(x), __FILE__, __LINE__))
+#endif
 #else
 #define uae_p32(x) ((uae_u32)(x))
 #endif

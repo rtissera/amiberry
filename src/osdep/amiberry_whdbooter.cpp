@@ -112,7 +112,7 @@ static bool dir_has_rom(const std::filesystem::path& dir)
 			continue;
 
 		const std::filesystem::path candidate = dir / name;
-#ifdef LIBRETRO
+#ifdef DONT_HAVE_POSIX
 		STAT st{};
 		if (posixemu_stat(candidate.c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
 #else
@@ -138,7 +138,7 @@ static bool vfs_enabled()
 
 static bool copy_file_vfs(const std::filesystem::path& src, const std::filesystem::path& dst)
 {
-#ifdef LIBRETRO
+#ifdef DONT_HAVE_POSIX
 	if (src.empty() || dst.empty())
 		return false;
 
@@ -220,7 +220,7 @@ static void copy_kickstarts_to_devs(const std::filesystem::path& src_dir,
 			continue;
 
 		const std::filesystem::path src = src_dir / name;
-#ifdef LIBRETRO
+#ifdef DONT_HAVE_POSIX
 		STAT st{};
 		if (posixemu_stat(src.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
 #else
